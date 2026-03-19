@@ -7,12 +7,23 @@ from src.transform.transformer import StockDataTransformer
 from src.transform.validator import StockDataValidator
 from src.load.database import DatabaseLoader
 
-def main():
+
+def main() -> None:
+    """
+    Main ETL pipeline execution:
+    Extract → Transform → Validate → Load
+    """
     try:
-        # Initialize configuration
+        logger.info("Initializing ETL pipeline...")
+
+        # -----------------------------
+        # Configuration
+        # -----------------------------
         cfg = Config()
 
-        # Initialize pipeline components
+        # -----------------------------
+        # Initialize components
+        # -----------------------------
         client = AlphaVantageClient(api_key=cfg.API_KEY)
         transformer = StockDataTransformer()
         validator = StockDataValidator()
@@ -21,15 +32,17 @@ def main():
         # -----------------------------
         # Extract
         # -----------------------------
-        logger.info("Starting data extraction from Alpha Vantage API...")
-        raw_data = client.get_daily_stock_data("AAPL")
+        symbol = "AAPL"
+
+        logger.info(f"Starting data extraction for symbol: {symbol}")
+        raw_data = client.get_daily_stock_data(symbol)
         logger.info("Data extraction completed successfully.")
 
         # -----------------------------
         # Transform
         # -----------------------------
         logger.info("Starting data transformation...")
-        df = transformer.transform(raw_data, symbol="AAPL")
+        df = transformer.transform(raw_data, symbol=symbol)
         logger.info(f"Data transformation completed. Records: {len(df)}")
 
         # -----------------------------
@@ -37,6 +50,10 @@ def main():
         # -----------------------------
         logger.info("Starting data validation...")
         df = validator.validate(df)
+
+        # IMPORTANT: create a safe copy to avoid pandas warnings/issues
+        df = df.copy()
+
         logger.info(f"Data validation successful. Records after validation: {len(df)}")
 
         # -----------------------------
@@ -44,11 +61,12 @@ def main():
         # -----------------------------
         logger.info("Starting data load into PostgreSQL...")
         loader.load_dataframe(df, table_name="stock_prices")
-        logger.info("ETL Pipeline completed successfully!")
+        logger.info("ETL Pipeline completed successfully.")
 
     except Exception as e:
         logger.exception(f"ETL Pipeline failed: {e}")
         raise
+
 
 if __name__ == "__main__":
     main()

@@ -1,131 +1,123 @@
-# 📈 Stock ETL Pipeline: Production-Grade Financial Data Engineering
+# Stock Data ETL Pipeline
 
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
-[![PostgreSQL](https://img.shields.io/badge/database-PostgreSQL-336791.svg)](https://www.postgresql.org/)
-[![Pandas](https://img.shields.io/badge/library-pandas-150458.svg)](https://pandas.pydata.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## Overview
 
-## 📖 Overview
-This repository contains a **production-ready ETL (Extract, Transform, Load) pipeline** designed to ingest, process, and store financial market data. Built with Python, it automates the flow of data from the **Alpha Vantage API** into a **PostgreSQL** data warehouse, ensuring high data integrity through rigorous validation layers.
+This project is a production-style ETL pipeline that extracts stock market data from the Alpha Vantage API, transforms and validates it, and loads it into a PostgreSQL database.
 
-### 💡 Why This Project Matters
-In the financial sector, data accuracy is non-negotiable. This pipeline isn't just a script; it's a modular system implementing **Senior Data Engineering** principles:
-* **Observability:** Integrated logging via `loguru`.
-* **Security:** Decoupled credentials using environment variables.
-* **Scalability:** Modular architecture designed to support future Airflow orchestration.
-* **Resilience:** Built-in error handling for API and Database connectivity.
+The goal of this project is to demonstrate real-world data engineering practices including:
+
+- API data ingestion
+- Data transformation using pandas
+- Data validation and cleaning
+- Database loading with SQLAlchemy
+- Logging and error handling
 
 ---
 
-## 🏗 System Architecture
+## Architecture
 
+The pipeline follows a simple ETL flow:
 
+Extract → Transform → Validate → Load
 
-1.  **Extraction:** Securely fetches time-series JSON data from Alpha Vantage.
-2.  **Transformation:** Normalizes nested JSON into flattened, typed DataFrames.
-3.  **Validation:** Executes data quality checks (Null handling, Type enforcement).
-4.  **Loading:** Performs optimized batch inserts into a PostgreSQL relational schema.
-
----
-
-## 🛠 Tech Stack
-* **Language:** Python 3.13+
-* **Processing:** `pandas` (Vectorized transformations)
-* **Database:** `PostgreSQL` + `SQLAlchemy` (ORM & Connection pooling)
-* **Logging:** `loguru` (Structured, rotation-capable logs)
-* **Config:** `python-dotenv` (Twelve-Factor App methodology)
+- Extract: Fetch data from Alpha Vantage API
+- Transform: Clean and structure the data
+- Validate: Ensure data quality and consistency
+- Load: Store data into PostgreSQL
 
 ---
 
-## 📂 Project Structure
-```text
-stock_etl_pipeline/
-├── src/
-│   ├── extract/      # API Client & Request logic
-│   ├── transform/    # Business logic & Data cleaning
-│   ├── load/         # PostgreSQL Loading modules
-│   ├── config/       # Environment & Global settings
-│   └── utils/        # Shared Logger & Helpers
-├── airflow/          # DAG definitions (Future scaling)
-├── docker/           # Containerization setup
-├── logs/             # Persistent execution history
-├── main.py           # Orchestration entry point
-└── requirements.txt  # Project dependencies
+## Project Structure
+
+```
+src/
+├── config/        # Environment configuration
+├── extract/       # API data extraction
+├── transform/     # Data transformation and validation
+├── load/          # Database loading
+├── utils/         # Logging utilities
 ```
 
------
+---
 
-## 🚀 Getting Started
+## Requirements
 
-### 1\. Environment Setup
+- Python 3.9+
+- PostgreSQL database
 
-```bash
-# Clone the repository
-git clone [https://github.com/ahmedmajid22/stock_etl_pipeline.git](https://github.com/ahmedmajid22/stock_etl_pipeline.git)
-cd stock_etl_pipeline
+---
 
-# Setup Virtual Environment
+## Installation
+
+1. Clone the repository:
+
+```
+git clone https://github.com/your-username/stock-etl-pipeline.git
+cd stock-etl-pipeline
+```
+
+2. Create virtual environment:
+
+```
 python3 -m venv venv
 source venv/bin/activate
+```
 
-# Install Dependencies
+3. Install dependencies:
+
+```
 pip install -r requirements.txt
 ```
 
-### 2\. Configuration
+---
+
+## Environment Variables
 
 Create a `.env` file in the root directory:
 
-```env
-ALPHA_VANTAGE_API_KEY=your_key_here
+```
+API_KEY=your_alpha_vantage_api_key
+
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=stock_db
 DB_USER=postgres
-DB_PASSWORD=your_password
+DB_PASSWORD=postgres
 ```
 
-### 3\. Initialize Database
+---
 
-```sql
--- Run in your PostgreSQL terminal
-CREATE DATABASE stock_db;
+## How to Run
+
 ```
-
-### 4\. Execute Pipeline
-
-```bash
 python main.py
 ```
 
------
+---
 
-## 📊 Pipeline Output
+## Features
 
-### Database Preview (`stock_prices` table):
+- Retry mechanism for API calls
+- Structured logging using Loguru
+- Data validation rules for financial data
+- Clean modular architecture
+- PostgreSQL integration
+- Production-like error handling
 
-| date       | symbol | open   | high   | low    | close  | volume   |
-| :--------- | :----- | :----- | :----- | :----- | :----- | :------- |
-| 2026-03-19 | AAPL   | 170.12 | 172.00 | 169.50 | 171.45 | 48230000 |
-| 2026-03-18 | AAPL   | 168.50 | 170.30 | 167.90 | 169.95 | 39560000 |
+---
 
-### Logging Output:
+## Future Improvements
 
-```text
-2026-03-19 | INFO | Fetching data for AAPL...
-2026-03-19 | INFO | Transformation complete: 100 records processed.
-2026-03-19 | INFO | Successfully loaded 100 records into 'stock_prices'.
-```
+- Add Apache Airflow for orchestration
+- Support multiple stock symbols
+- Add data visualization layer
+- Containerize with Docker
+- Add unit and integration tests
+- Implement data warehouse (Star schema)
 
------
+---
 
-## 🛤 Roadmap & Future Enhancements
+## Author
 
-  - [ ] **Incremental Loading:** Implement high-watermark tracking to fetch only new records.
-  - [ ] **Dockerization:** Wrap the entire environment in a Docker Compose file.
-  - [ ] **Data Quality Suite:** Integrate `Great Expectations` for advanced schema validation.
-  - [ ] **CI/CD:** GitHub Actions to automate unit tests on every push.
-
------
-
-**Maintained by [ahmedmajid22](https://www.google.com/search?q=https://github.com/ahmedmajid22)**
+Ahmed Abufayed  
+Data Engineer (Aspiring)
