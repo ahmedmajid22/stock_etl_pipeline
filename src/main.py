@@ -1,4 +1,4 @@
-# main.py
+import sys
 
 from src.config.config import Config
 from src.utils.logger import logger
@@ -8,13 +8,14 @@ from src.transform.validator import StockDataValidator
 from src.load.database import DatabaseLoader
 
 
-def main() -> None:
+def main(symbol: str = "AAPL") -> None:
     """
     Main ETL pipeline execution:
     Extract → Transform → Validate → Load
     """
+
     try:
-        logger.info("Initializing ETL pipeline...")
+        logger.info(f"Starting ETL pipeline for symbol: {symbol}")
 
         # -----------------------------
         # Configuration
@@ -32,41 +33,36 @@ def main() -> None:
         # -----------------------------
         # Extract
         # -----------------------------
-        symbol = "AAPL"
-
-        logger.info(f"Starting data extraction for symbol: {symbol}")
+        logger.info("Extracting data...")
         raw_data = client.get_daily_stock_data(symbol)
-        logger.info("Data extraction completed successfully.")
 
         # -----------------------------
         # Transform
         # -----------------------------
-        logger.info("Starting data transformation...")
+        logger.info("Transforming data...")
         df = transformer.transform(raw_data, symbol=symbol)
-        logger.info(f"Data transformation completed. Records: {len(df)}")
 
         # -----------------------------
         # Validate
         # -----------------------------
-        logger.info("Starting data validation...")
-        df = validator.validate(df)
+        logger.info("Validating data...")
+        df = validator.validate(df).copy()
 
-        # IMPORTANT: create a safe copy to avoid pandas warnings/issues
-        df = df.copy()
-
-        logger.info(f"Data validation successful. Records after validation: {len(df)}")
+        logger.info(f"Validated records: {len(df)}")
 
         # -----------------------------
         # Load
         # -----------------------------
-        logger.info("Starting data load into PostgreSQL...")
-        loader.load_dataframe(df, table_name="stock_prices")
-        logger.info("ETL Pipeline completed successfully.")
+        logger.info("Loading data into PostgreSQL (UPSERT)...")
+        loader.upsert_dataframe(df, "stock_prices")
+
+        logger.info("ETL pipeline completed successfully")
 
     except Exception as e:
-        logger.exception(f"ETL Pipeline failed: {e}")
+        logger.exception(f"ETL pipeline failed for {symbol}: {e}")
         raise
 
 
 if __name__ == "__main__":
-    main()
+    symbol = sys.argv[1] if len(sys.argv) > 1 else "AAPL"
+    main(symbol)

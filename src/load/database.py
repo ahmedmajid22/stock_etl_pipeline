@@ -1,53 +1,57 @@
-# src/load/database.py
-
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, MetaData, Table, Column
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.types import String, Float, BigInteger, Date
 from sqlalchemy.exc import SQLAlchemyError
 from src.utils.logger import logger
-from typing import Optional
+
 
 class DatabaseLoader:
-    """
-    Production-grade loader for inserting pandas DataFrames into PostgreSQL.
-    """
-
     def __init__(self, db_connection_string: str) -> None:
-        """
-        Initialize the DatabaseLoader.
+        self.engine = create_engine(db_connection_string)
+        self.metadata = MetaData()
 
-        Args:
-            db_connection_string (str): SQLAlchemy-compatible PostgreSQL connection string
-        """
-        self.db_connection_string = db_connection_string
+        # Define table schema (IMPORTANT)
+        self.table = Table(
+            "stock_prices",
+            self.metadata,
+            Column("date", Date, primary_key=True),
+            Column("symbol", String, primary_key=True),
+            Column("open", Float),
+            Column("high", Float),
+            Column("low", Float),
+            Column("close", Float),
+            Column("volume", BigInteger),
+        )
+
+        # Create table if not exists
+        self.metadata.create_all(self.engine)
+
+        logger.info("Database initialized successfully")
+
+    def upsert_dataframe(self, df: pd.DataFrame, table_name: str) -> None:
         try:
-            self.engine = create_engine(self.db_connection_string)
-            logger.info("Database engine created successfully.")
+            with self.engine.begin() as conn:
+
+                records = df.to_dict(orient="records")
+
+                stmt = insert(self.table).values(records)
+
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["symbol", "date"],
+                    set_={
+                        "open": stmt.excluded.open,
+                        "high": stmt.excluded.high,
+                        "low": stmt.excluded.low,
+                        "close": stmt.excluded.close,
+                        "volume": stmt.excluded.volume,
+                    },
+                )
+
+                conn.execute(stmt)
+
+            logger.info(f"Upsert successful: {len(df)} records")
+
         except SQLAlchemyError as e:
-            logger.exception(f"Failed to create database engine: {e}")
-            raise
-
-    def load_dataframe(self, df: pd.DataFrame, table_name: str, if_exists: str = "append") -> None:
-        """
-        Load a pandas DataFrame into a PostgreSQL table.
-
-        Args:
-            df (pd.DataFrame): DataFrame to insert
-            table_name (str): Target table name in PostgreSQL
-            if_exists (str): What to do if table exists ('append', 'replace', 'fail')
-
-        Raises:
-            SQLAlchemyError: If insert fails
-        """
-        try:
-            logger.info(f"Loading {len(df)} records into table '{table_name}'...")
-            df.to_sql(
-                name=table_name,
-                con=self.engine,
-                if_exists=if_exists,
-                index=False,
-                method="multi"  # batch insert for performance
-            )
-            logger.info(f"Successfully loaded {len(df)} records into '{table_name}'.")
-        except SQLAlchemyError as e:
-            logger.exception(f"Failed to load DataFrame into '{table_name}': {e}")
+            logger.exception(f"Database error: {e}")
             raise

@@ -1,8 +1,7 @@
-# src/transform/transformer.py
-
 import pandas as pd
 from src.utils.logger import logger
 from typing import Dict
+
 
 class StockDataTransformer:
     """
@@ -11,28 +10,24 @@ class StockDataTransformer:
     """
 
     def transform(self, raw_data: Dict, symbol: str) -> pd.DataFrame:
-        """
-        Transform raw Alpha Vantage daily stock data into a clean DataFrame.
-
-        Args:
-            raw_data (dict): Raw JSON from Alpha Vantage API
-            symbol (str): Stock ticker symbol
-
-        Returns:
-            pd.DataFrame: Cleaned DataFrame with columns: date, symbol, open, high, low, close, volume
-
-        Raises:
-            ValueError: If the input data format is invalid
-        """
         logger.info(f"Starting transformation for symbol: {symbol}")
+
+        # Validate input
+        if not raw_data or not isinstance(raw_data, dict):
+            raise ValueError("Invalid raw_data: must be a non-empty dictionary")
 
         try:
             time_series = raw_data["Time Series (Daily)"]
         except KeyError:
             raise ValueError("Invalid data format: 'Time Series (Daily)' key not found")
 
-        # Convert nested dict to DataFrame
+        if not time_series:
+            raise ValueError("Empty time series data received from API")
+
+        # Convert nested dict → DataFrame
         df = pd.DataFrame.from_dict(time_series, orient="index")
+
+        # Rename columns
         df = df.rename(columns={
             "1. open": "open",
             "2. high": "high",
@@ -41,23 +36,29 @@ class StockDataTransformer:
             "5. volume": "volume"
         })
 
-        # Add symbol column
+        # Add symbol
         df["symbol"] = symbol
 
-        # Reset index and rename to 'date'
+        # Reset index → date
         df = df.reset_index().rename(columns={"index": "date"})
-        df["date"] = pd.to_datetime(df["date"])
 
-        # Convert data types
-        df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
-        df["volume"] = df["volume"].astype(int)
+        # Convert types safely
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
-        # Sort by date ascending
-        df = df.sort_values(by="date").reset_index(drop=True)
+        for col in ["open", "high", "low", "close"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        # Drop missing values
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+
+        # Drop bad rows
         df = df.dropna()
 
-        logger.info(f"Transformation complete for {symbol}, records processed: {len(df)}")
+        # Convert final types
+        df["volume"] = df["volume"].astype(int)
+
+        # Sort
+        df = df.sort_values(by="date").reset_index(drop=True)
+
+        logger.info(f"Transformation complete for {symbol}, records: {len(df)}")
 
         return df

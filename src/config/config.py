@@ -1,19 +1,21 @@
-# src/config/config.py
-
 from dotenv import load_dotenv
 import os
+
 
 class Config:
     """
     Configuration class for the Stock ETL Pipeline.
-
-    Loads environment variables from the .env file and provides
-    database connection string for PostgreSQL.
     """
 
     def __init__(self) -> None:
-        """Initialize configuration by loading environment variables."""
-        load_dotenv()
+        """
+        Initialize configuration by loading environment variables.
+        Avoid loading .env inside Docker/Airflow.
+        """
+
+        # FIX: Only load .env locally (not inside Docker)
+        if not os.getenv("AIRFLOW_HOME"):
+            load_dotenv()
 
         self.API_KEY: str = os.getenv("API_KEY")
         self.DB_HOST: str = os.getenv("DB_HOST")
@@ -25,8 +27,9 @@ class Config:
         self._validate_env()
 
     def _validate_env(self) -> None:
-        """Validate that all required environment variables are set."""
+        """Validate required environment variables."""
         missing_vars = []
+
         for var_name, value in {
             "API_KEY": self.API_KEY,
             "DB_HOST": self.DB_HOST,
@@ -46,9 +49,8 @@ class Config:
     def get_db_connection_string(self) -> str:
         """
         Generate PostgreSQL connection string.
-
-        Returns:
-            str: PostgreSQL connection string in the format:
-                 postgresql://user:password@host:port/dbname
         """
-        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return (
+            f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )

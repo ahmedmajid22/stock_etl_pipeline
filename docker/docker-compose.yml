@@ -1,0 +1,132 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stock_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7
+    container_name: airflow-redis
+    ports:
+      - "6379:6379"
+
+  airflow-init:
+    build: .
+    container_name: airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
+      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW_UID: 501
+      PYTHONPATH: /opt/airflow
+    entrypoint: /bin/bash
+    command: >
+      -c "airflow db migrate && airflow users create --username admin --firstname Ahmed --lastname Abufayed --role Admin --email admin@example.com --password admin"
+
+  airflow-webserver:
+    build: .
+    container_name: airflow-webserver
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
+      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      API_KEY: HZ3RW4SNG299BAEN
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: stock_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      PYTHONPATH: /opt/airflow
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/logs:/opt/airflow/logs
+      - ../airflow/plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+    working_dir: /opt/airflow
+    command: webserver
+
+  airflow-scheduler:
+    build: .
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
+      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      API_KEY: HZ3RW4SNG299BAEN
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: stock_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/logs:/opt/airflow/logs
+      - ../airflow/plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+    working_dir: /opt/airflow
+    command: scheduler
+
+  airflow-worker:
+    build: .
+    container_name: airflow-worker
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
+      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      API_KEY: HZ3RW4SNG299BAEN
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: stock_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/logs:/opt/airflow/logs
+      - ../airflow/plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+    working_dir: /opt/airflow
+    command: celery worker
+
+volumes:
+  postgres_data:

@@ -1,18 +1,15 @@
-# src/utils/logger.py
-
 from loguru import logger
 import os
-from datetime import datetime
 
-# Ensure logs directory exists
-LOGS_DIR = "logs"
+# FIX: Use Airflow logs directory inside Docker
+LOGS_DIR = os.getenv("LOGS_DIR", "/opt/airflow/logs")
+
 os.makedirs(LOGS_DIR, exist_ok=True)
 
-# Configure logger
 logger.add(
     os.path.join(LOGS_DIR, "app.log"),
-    rotation="00:00",  # Daily rotation at midnight
-    retention="7 days",  # Keep last 7 days of logs
+    rotation="00:00",
+    retention="7 days",
     level="INFO",
     format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
     enqueue=True,
@@ -20,11 +17,6 @@ logger.add(
     diagnose=True
 )
 
-def log_exception(error: Exception) -> None:
-    """
-    Log an exception with full stack trace.
 
-    Args:
-        error (Exception): Exception object to log
-    """
+def log_exception(error: Exception) -> None:
     logger.exception(f"Exception occurred: {error}")

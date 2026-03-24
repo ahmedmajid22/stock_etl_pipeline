@@ -1,5 +1,3 @@
-# src/transform/validator.py
-
 import pandas as pd
 from src.utils.logger import logger
 from typing import List
