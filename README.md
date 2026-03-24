@@ -1,116 +1,59 @@
-# Stock Data ETL Pipeline
+# 📈 Stock Market ETL Pipeline (Production-Ready)
 
-## Overview
+## 🚀 Overview
 
-This project is a production-style ETL pipeline that extracts stock market data from the Alpha Vantage API, transforms and validates it, and loads it into a PostgreSQL database.
+This project is a **production-style ETL pipeline** that extracts stock market data from the Alpha Vantage API, processes it, and loads it into a PostgreSQL database using **Apache Airflow for orchestration** and **Docker for containerization**.
 
-The goal of this project is to demonstrate real-world data engineering practices including:
-
-- API data ingestion
-- Data transformation using pandas
-- Data validation and cleaning
-- Database loading with SQLAlchemy
-- Logging and error handling
+The project demonstrates real-world **Data Engineering practices** including pipeline orchestration, modular architecture, data validation, and containerized deployment.
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
-The pipeline follows a simple ETL flow:
+The pipeline follows a modern ETL workflow:
 
-Extract → Transform → Validate → Load
+**Extract** → **Transform** → **Validate** → **Load** → **Orchestrate**
 
-- Extract: Fetch data from Alpha Vantage API
-- Transform: Clean and structure the data
-- Validate: Ensure data quality and consistency
-- Load: Store data into PostgreSQL
+### 🔹 Flow Description
+
+* **Extract**: Fetches daily stock data from Alpha Vantage API.
+* **Transform**: Cleans and structures raw JSON into a pandas DataFrame.
+* **Validate**: Applies data quality checks (nulls, types, financial logic).
+* **Load**: Stores clean data into PostgreSQL.
+* **Orchestrate**: Managed and scheduled using Apache Airflow.
 
 ---
 
-## Project Structure
+## ⚙️ Tech Stack
 
-```
+* **Python** (Core Logic)
+* **Pandas** (Data Transformation)
+* **PostgreSQL** (Data Storage)
+* **SQLAlchemy** (ORM/Database Connection)
+* **Apache Airflow** (Orchestration)
+* **Docker & Docker Compose** (Containerization)
+* **Loguru** (Advanced Logging)
+
+---
+
+## 📁 Project Structure
+
+```text
+airflow/
+├── dags/                 # Airflow DAG definitions
+├── logs/                 # Airflow logs
+├── plugins/              # Custom Airflow plugins
+docker/
+├── docker-compose.yml    # Multi-container setup
+├── Dockerfile            # Custom Airflow image
+├── init_db.sql           # Database initialization script
+├── requirements.txt      # Python dependencies
 src/
-├── config/        # Environment configuration
-├── extract/       # API data extraction
-├── transform/     # Data transformation and validation
-├── load/          # Database loading
-├── utils/         # Logging utilities
-```
-
----
-
-## Requirements
-
-- Python 3.9+
-- PostgreSQL database
-
----
-
-## Installation
-
-1. Clone the repository:
-
-```
-git clone https://github.com/your-username/stock-etl-pipeline.git
-cd stock-etl-pipeline
-```
-
-2. Create virtual environment:
-
-```
-python3 -m venv venv
-source venv/bin/activate
-```
-
-3. Install dependencies:
-
-```
-pip install -r requirements.txt
-```
-
----
-
-## Environment Variables
-
-Create a `.env` file in the root directory:
-
-```
-API_KEY=your_alpha_vantage_api_key
-
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=stock_db
-DB_USER=postgres
-DB_PASSWORD=postgres
-```
-
----
-
-## How to Run
-
-```
-python main.py
-```
-
----
-
-## Features
-
-- Retry mechanism for API calls
-- Structured logging using Loguru
-- Data validation rules for financial data
-- Clean modular architecture
-- PostgreSQL integration
-- Production-like error handling
-
----
-
-## Future Improvements
-
-- Add Apache Airflow for orchestration
-- Support multiple stock symbols
-- Add data visualization layer
-- Containerize with Docker
-- Add unit and integration tests
-- Implement data warehouse (Star schema)
+├── config/               # Environment configuration
+├── extract/              # API client logic
+├── transform/            # Transformation & validation logic
+├── load/                 # Database loading logic
+├── utils/                # Logging and helper utilities
+├── main.py               # ETL pipeline entry point
+tests/                    # Unit and integration tests
+.env                      # Environment variables (API keys, DB creds)
