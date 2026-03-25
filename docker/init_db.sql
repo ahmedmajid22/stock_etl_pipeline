@@ -2,17 +2,21 @@
 SELECT 'CREATE DATABASE stock_db'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'stock_db')\gexec
 
--- Connect to the database
-\c stock_db;
+-- Dimension table
+CREATE TABLE IF NOT EXISTS stocks (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(10) UNIQUE NOT NULL
+);
 
--- Create table if not exists
+-- Fact table
 CREATE TABLE IF NOT EXISTS stock_prices (
+    stock_id INTEGER NOT NULL,
     date DATE NOT NULL,
-    symbol VARCHAR(10) NOT NULL,
-    open DOUBLE PRECISION,
-    high DOUBLE PRECISION,
-    low DOUBLE PRECISION,
-    close DOUBLE PRECISION,
+    open FLOAT,
+    high FLOAT,
+    low FLOAT,
+    close FLOAT,
     volume BIGINT,
-    PRIMARY KEY (symbol, date)
+    PRIMARY KEY (stock_id, date),
+    FOREIGN KEY (stock_id) REFERENCES stocks(id)
 );
