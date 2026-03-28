@@ -2,6 +2,7 @@ import pandas as pd
 from src.utils.logger import logger
 from typing import List
 
+
 class StockDataValidator:
     """
     Production-grade validator for stock market data.
@@ -28,6 +29,9 @@ class StockDataValidator:
         Raises:
             ValueError: If required columns are missing
         """
+        # Work on a copy to avoid mutating the original DataFrame
+        df = df.copy()
+
         logger.info(f"Starting validation: {len(df)} rows")
 
         # Check required columns
@@ -39,18 +43,22 @@ class StockDataValidator:
         before_nulls = len(df)
         df = df.dropna()
         dropped_nulls = before_nulls - len(df)
+        if dropped_nulls > 0:
+            logger.info(f"Dropped {dropped_nulls} rows due to null values")
 
         # Remove duplicates
         before_dupes = len(df)
         df = df.drop_duplicates()
         dropped_dupes = before_dupes - len(df)
+        if dropped_dupes > 0:
+            logger.info(f"Dropped {dropped_dupes} duplicate rows")
 
         # Convert data types
         df['date'] = pd.to_datetime(df['date'])
         df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
         df['volume'] = df['volume'].astype(int)
 
-        # Logical consistency
+        # Logical consistency (high >= low, high >= open/close, low <= open/close)
         logical_mask = (
             (df['high'] >= df['low']) &
             (df['high'] >= df['open']) &
@@ -61,6 +69,8 @@ class StockDataValidator:
         before_logic = len(df)
         df = df[logical_mask]
         dropped_logic = before_logic - len(df)
+        if dropped_logic > 0:
+            logger.info(f"Dropped {dropped_logic} rows violating price consistency rules")
 
         total_removed = dropped_nulls + dropped_dupes + dropped_logic
         logger.info(

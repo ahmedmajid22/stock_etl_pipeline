@@ -10,11 +10,11 @@ class Config:
     def __init__(self) -> None:
         """
         Initialize configuration by loading environment variables.
-        Avoid loading .env inside Docker/Airflow.
+        Load .env if it exists in the current directory.
         """
 
-        # FIX: Only load .env locally (not inside Docker)
-        if not os.getenv("AIRFLOW_HOME"):
+        # Load .env if present (works both locally and in Docker if file is mounted)
+        if os.path.exists(".env"):
             load_dotenv()
 
         self.API_KEY: str = os.getenv("API_KEY")

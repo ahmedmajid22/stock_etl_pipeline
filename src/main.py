@@ -54,7 +54,7 @@ def main(symbol: str = "AAPL") -> None:
         # Load
         # -----------------------------
         logger.info("Loading data into PostgreSQL (UPSERT)...")
-        loader.upsert_dataframe(df, "stock_prices")
+        loader.upsert_dataframe(df, symbol)   # ✅ Fixed: pass symbol
 
         logger.info("ETL pipeline completed successfully")
 

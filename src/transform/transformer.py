@@ -43,6 +43,7 @@ class StockDataTransformer:
         df = df.reset_index().rename(columns={"index": "date"})
 
         # Convert types safely
+        before = len(df)
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
         for col in ["open", "high", "low", "close"]:
@@ -52,6 +53,9 @@ class StockDataTransformer:
 
         # Drop bad rows
         df = df.dropna()
+        dropped = before - len(df)
+        if dropped > 0:
+            logger.warning(f"Dropped {dropped} rows due to conversion errors or NaNs")
 
         # Convert final types
         df["volume"] = df["volume"].astype(int)
