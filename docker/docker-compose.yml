@@ -2,25 +2,53 @@ services:
   postgres:
     image: postgres:13
     container_name: airflow-postgres
+    restart: unless-stopped
+    env_file:
+      - ../.env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: stock_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
+      test: ["CMD", "pg_isready", "-U", "${DB_USER}"]
       interval: 10s
+      timeout: 5s
       retries: 5
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   redis:
     image: redis:7
     container_name: airflow-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
   airflow-init:
     build: .
@@ -28,19 +56,26 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ../.env
     environment:
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
-      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: 501
+      AIRFLOW_UID: ${AIRFLOW_UID}
       PYTHONPATH: /opt/airflow
-      # Celery config
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres/stock_db
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
     entrypoint: /bin/bash
     command: >
       -c "airflow db migrate && airflow users create --username admin --firstname Ahmed --lastname Abufayed --role Admin --email admin@example.com --password admin"
+    # No restart for init container – it runs once and exits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   airflow-webserver:
     build: .
@@ -51,20 +86,22 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+    env_file:
+      - ../.env
     environment:
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
-      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      API_KEY: AU2CT767K1D6GT3F
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: stock_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      API_KEY: ${API_KEY}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       PYTHONPATH: /opt/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres/stock_db
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
     ports:
       - "8080:8080"
     volumes:
@@ -74,6 +111,19 @@ services:
       - ../src:/opt/airflow/src
     working_dir: /opt/airflow
     command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   airflow-scheduler:
     build: .
@@ -84,20 +134,22 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+    env_file:
+      - ../.env
     environment:
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
-      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      API_KEY: AU2CT767K1D6GT3F
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: stock_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      API_KEY: ${API_KEY}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       PYTHONPATH: /opt/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres/stock_db
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
     volumes:
       - ../airflow/dags:/opt/airflow/dags
       - ../airflow/logs:/opt/airflow/logs
@@ -105,6 +157,14 @@ services:
       - ../src:/opt/airflow/src
     working_dir: /opt/airflow
     command: scheduler
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   airflow-worker:
     build: .
@@ -115,20 +175,22 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+    env_file:
+      - ../.env
     environment:
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/stock_db
-      AIRFLOW__CORE__FERNET_KEY: 3Mwbw1IzHVxqQl0DgZUKOdSPd0aej77GBFt4iakc_7w=
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      API_KEY: AU2CT767K1D6GT3F
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: stock_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      API_KEY: ${API_KEY}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       PYTHONPATH: /opt/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres/stock_db
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
     volumes:
       - ../airflow/dags:/opt/airflow/dags
       - ../airflow/logs:/opt/airflow/logs
@@ -136,6 +198,14 @@ services:
       - ../src:/opt/airflow/src
     working_dir: /opt/airflow
     command: celery worker
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
 volumes:
   postgres_data:

@@ -1,6 +1,5 @@
--- Create database if not exists
-SELECT 'CREATE DATABASE stock_db'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'stock_db')\gexec
+-- This script runs when the PostgreSQL container first starts (only if the database is empty).
+-- It creates the tables and indexes needed for the ETL pipeline.
 
 -- Dimension table
 CREATE TABLE IF NOT EXISTS stocks (
@@ -18,5 +17,9 @@ CREATE TABLE IF NOT EXISTS stock_prices (
     close FLOAT,
     volume BIGINT,
     PRIMARY KEY (stock_id, date),
-    FOREIGN KEY (stock_id) REFERENCES stocks(id)
+    FOREIGN KEY (stock_id) REFERENCES stocks(id) ON DELETE CASCADE
 );
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_stock_prices_date ON stock_prices(date);
+CREATE INDEX IF NOT EXISTS idx_stock_prices_stock_id ON stock_prices(stock_id);
