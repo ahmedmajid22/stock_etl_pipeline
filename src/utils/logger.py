@@ -1,32 +1,37 @@
-from loguru import logger
 import os
 import sys
+from pathlib import Path
+from loguru import logger
 
-# FIX: Use Airflow logs directory inside Docker
-LOGS_DIR = os.getenv("LOGS_DIR", "/opt/airflow/logs")
+# Resolve log directory based on environment
+if os.getenv("AIRFLOW_HOME"):
+    LOGS_DIR = Path(os.getenv("AIRFLOW_HOME")) / "logs"
+elif os.path.exists("/opt/airflow"):
+    LOGS_DIR = Path("/opt/airflow/logs")
+else:
+    LOGS_DIR = Path(__file__).resolve().parents[2] / "logs"
 
-os.makedirs(LOGS_DIR, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-# File logger (rotating)
+# Remove default Loguru handler
+logger.remove()
+
+# Rotating file handler — daily rotation, 7-day retention
 logger.add(
-    os.path.join(LOGS_DIR, "app.log"),
+    str(LOGS_DIR / "app.log"),
     rotation="00:00",
     retention="7 days",
     level="INFO",
-    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
-    enqueue=True,
-    backtrace=True,
-    diagnose=True
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name} | {message}",
+    enqueue=True,       # thread-safe for Celery workers
+    backtrace=True,     # full traceback on exceptions
+    diagnose=True,      # variable values in tracebacks
 )
 
-# Console logger (for Airflow UI)
+# Stdout handler — visible in Airflow task logs UI
 logger.add(
     sys.stdout,
     level="INFO",
-    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
-    enqueue=True
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name} | {message}",
+    enqueue=True,
 )
-
-
-def log_exception(error: Exception) -> None:
-    logger.exception(f"Exception occurred: {error}")

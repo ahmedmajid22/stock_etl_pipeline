@@ -1,6 +1,38 @@
+# Virtual environments
 venv/
-__pycache__/
 .env
+.env.*
+.envrc
+
+# Python
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+.coverage
+
+# Logs
 logs/
+*.log
+
+# Data
 data/
+*.parquet
+
+# Airflow
+airflow/logs/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Docker env (extra safety)
+docker/.env
+
+# Build
+dist/
+build/

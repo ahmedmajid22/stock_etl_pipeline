@@ -12,6 +12,7 @@ class StockDataValidator:
     - Have correct data types
     - Do not contain nulls or duplicates
     - Meet logical consistency rules for stock prices
+    - Validate price and volume constraints
     """
 
     REQUIRED_COLUMNS: List[str] = ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume']
@@ -53,11 +54,39 @@ class StockDataValidator:
         if dropped_dupes > 0:
             logger.info(f"Dropped {dropped_dupes} duplicate rows")
 
-        # Convert data types
-        df['date'] = pd.to_datetime(df['date'])
-        df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
-        df['volume'] = df['volume'].astype(int)
-
+        # Convert data types with error handling
+        # 🟢 CHANGED: Make date UTC‑aware and convert to date only (matching DB)
+        df['date'] = pd.to_datetime(df['date'], utc=True).dt.date
+        
+        # Convert numeric columns safely
+        numeric_cols = ["open", "high", "low", "close", "volume"]
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        
+        # Remove any rows that became null after conversion
+        before_numeric = len(df)
+        df = df.dropna(subset=numeric_cols)
+        dropped_numeric = before_numeric - len(df)
+        if dropped_numeric > 0:
+            logger.info(f"Dropped {dropped_numeric} rows due to numeric conversion errors")
+        
+        # ADDED: Price validation - ensure prices are positive
+        before_positive = len(df)
+        df = df[df["open"] > 0]
+        df = df[df["close"] > 0]
+        df = df[df["high"] > 0]
+        df = df[df["low"] > 0]
+        dropped_positive = before_positive - len(df)
+        if dropped_positive > 0:
+            logger.info(f"Dropped {dropped_positive} rows with non-positive prices")
+        
+        # ADDED: Volume validation - volume should be non-negative
+        before_volume = len(df)
+        df = df[df["volume"] >= 0]
+        dropped_volume = before_volume - len(df)
+        if dropped_volume > 0:
+            logger.info(f"Dropped {dropped_volume} rows with negative volume")
+        
         # Logical consistency (high >= low, high >= open/close, low <= open/close)
         logical_mask = (
             (df['high'] >= df['low']) &
@@ -71,8 +100,12 @@ class StockDataValidator:
         dropped_logic = before_logic - len(df)
         if dropped_logic > 0:
             logger.info(f"Dropped {dropped_logic} rows violating price consistency rules")
+        
+        # Final type conversion
+        df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
+        df['volume'] = df['volume'].astype(int)
 
-        total_removed = dropped_nulls + dropped_dupes + dropped_logic
+        total_removed = dropped_nulls + dropped_dupes + dropped_numeric + dropped_positive + dropped_volume + dropped_logic
         logger.info(
             f"Validation complete. Rows before: {before_nulls}, after: {len(df)}, removed: {total_removed}"
         )

@@ -56,6 +56,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - ../.env
     environment:
@@ -67,10 +69,35 @@ services:
       PYTHONPATH: /opt/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
+      API_KEY: ${API_KEY}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
     entrypoint: /bin/bash
     command: >
-      -c "airflow db migrate && airflow users create --username admin --firstname Ahmed --lastname Abufayed --role Admin --email admin@example.com --password admin"
-    # No restart for init container – it runs once and exits
+      -c "
+      airflow db migrate &&
+      airflow users create
+        --username admin
+        --firstname Ahmed
+        --lastname Abufayed
+        --role Admin
+        --email admin@example.com
+        --password admin &&
+      airflow pools set alpha_vantage_pool 3 'Cap concurrent Alpha Vantage API calls' &&
+      airflow connections add 'alpha_vantage_api'
+        --conn-type 'http'
+        --conn-password '${API_KEY}' || true &&
+      airflow connections add 'stock_db'
+        --conn-type 'postgres'
+        --conn-host '${DB_HOST}'
+        --conn-login '${DB_USER}'
+        --conn-password '${DB_PASSWORD}'
+        --conn-port '${DB_PORT}'
+        --conn-schema '${DB_NAME}' || true
+      "
     deploy:
       resources:
         limits:
@@ -109,6 +136,7 @@ services:
       - ../airflow/logs:/opt/airflow/logs
       - ../airflow/plugins:/opt/airflow/plugins
       - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
     working_dir: /opt/airflow
     command: webserver
     healthcheck:
@@ -155,6 +183,7 @@ services:
       - ../airflow/logs:/opt/airflow/logs
       - ../airflow/plugins:/opt/airflow/plugins
       - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
     working_dir: /opt/airflow
     command: scheduler
     deploy:
@@ -172,6 +201,8 @@ services:
     restart: always
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
@@ -196,6 +227,7 @@ services:
       - ../airflow/logs:/opt/airflow/logs
       - ../airflow/plugins:/opt/airflow/plugins
       - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
     working_dir: /opt/airflow
     command: celery worker
     deploy:
@@ -207,5 +239,37 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # 🟢 NEW SERVICES (Observability)
+
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: pushgateway
+    ports:
+      - "9091:9091"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - pushgateway
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
+  grafana_data:

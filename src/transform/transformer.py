@@ -44,7 +44,9 @@ class StockDataTransformer:
 
         # Convert types safely
         before = len(df)
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+
+        # 🟢 CHANGED: Make date UTC‑aware and convert to date only (matching DB)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce", utc=True).dt.date
 
         for col in ["open", "high", "low", "close"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")

@@ -105,7 +105,7 @@ class AlphaVantageClient:
             "outputsize": "compact",
         }
 
-        max_retries = 3
+        max_retries = 1 
         backoff_base = 2
 
         for attempt in range(1, max_retries + 1):
