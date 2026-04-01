@@ -1,6 +1,6 @@
 import sys
 import uuid
-from datetime import datetime, timezone   # <-- Added timezone
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -56,9 +56,8 @@ def main(symbol: str = "AAPL") -> None:
     Extract → Transform → Validate → Stage → Load
     """
 
-    # ── Use UTC‑aware timestamps ─────────────────────────────────
-    pipeline_start = datetime.now(timezone.utc)          # <-- Changed
-    run_id = f"{pipeline_start.strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"   # <-- New
+    pipeline_start = datetime.now(timezone.utc)
+    run_id = f"{pipeline_start.strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     # Metrics
     rows_raw = 0
@@ -84,7 +83,7 @@ def main(symbol: str = "AAPL") -> None:
 
         # ── Extract ─────────────────────────────────────────────
         logger.info("EXTRACT: fetching from Alpha Vantage")
-        t0 = datetime.now(timezone.utc)                     # <-- Changed
+        t0 = datetime.now(timezone.utc)
         raw_data = client.get_daily_stock_data(symbol)
         api_latency_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
 
@@ -112,7 +111,8 @@ def main(symbol: str = "AAPL") -> None:
 
         if latest_db_date:
             before = len(df)
-            df = df[df["date"] > pd.Timestamp(latest_db_date)]
+            # Fix: compare date objects directly (no pd.Timestamp conversion)
+            df = df[df["date"] > latest_db_date]
             logger.info(
                 f"INCREMENTAL: {len(df)} new rows (skipped {before - len(df)} already in DB)"
             )
@@ -128,7 +128,7 @@ def main(symbol: str = "AAPL") -> None:
 
         # ── Load ────────────────────────────────────────────────
         logger.info("LOAD: upserting to PostgreSQL")
-        t0 = datetime.now(timezone.utc)                     # <-- Changed
+        t0 = datetime.now(timezone.utc)
         loader.upsert_dataframe(df, symbol)
         db_latency_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
 
@@ -142,8 +142,7 @@ def main(symbol: str = "AAPL") -> None:
         raise
 
     finally:
-        # ── Audit Log ───────────────────────────────────────────
-        pipeline_duration_s = (datetime.now(timezone.utc) - pipeline_start).total_seconds()   # <-- Changed
+        pipeline_duration_s = (datetime.now(timezone.utc) - pipeline_start).total_seconds()
 
         loader.log_quality_metrics(
             symbol=symbol,

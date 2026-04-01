@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from sqlalchemy import create_engine, text
+from src.load.database import DatabaseLoader
 
 
 @pytest.fixture
@@ -60,3 +62,26 @@ def df_with_nulls(valid_df):
 @pytest.fixture
 def df_missing_column(valid_df):
     return valid_df.drop(columns=["volume"])
+
+
+# --- New fixture for integration tests ---
+
+@pytest.fixture(scope="function")
+def pg_loader():
+    """
+    Creates a DatabaseLoader pointed at a real PostgreSQL test database.
+    Requires a running PostgreSQL instance (use pytest-postgresql or a local one).
+    Cleans up all test data after each test.
+    """
+    import os
+    db_url = os.getenv(
+        "TEST_DATABASE_URL",
+        "postgresql://postgres:@localhost:5432/stock_db_test"
+    )
+    loader = DatabaseLoader(db_url)
+    yield loader
+    # Teardown: wipe test data
+    with loader.engine.begin() as conn:
+        conn.execute(text("DELETE FROM data_quality_log"))
+        conn.execute(text("DELETE FROM stock_prices"))
+        conn.execute(text("DELETE FROM stocks"))

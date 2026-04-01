@@ -4,55 +4,56 @@ from dotenv import load_dotenv
 from src.utils.logger import logger
 
 
-class Config:
-    """
-    Production‑grade configuration manager with type safety and validation.
-    """
+# Variables that must be set — pipeline cannot run without them
+_REQUIRED_VARS = {"API_KEY", "DB_HOST", "DB_NAME", "DB_USER"}
 
+# Variables that are optional (e.g. passwordless local postgres is valid)
+_OPTIONAL_VARS = {"DB_PASSWORD"}
+
+
+class Config:
     def __init__(self) -> None:
-        # Only load .env if we're not inside Airflow (to avoid overriding Docker env)
-        # and if the file exists.
         if not os.getenv("AIRFLOW_HOME") and os.path.exists(".env"):
             load_dotenv()
             logger.info("Loaded environment from .env file")
 
-        # Fetch raw values
-        self._api_key: Optional[str] = os.getenv("API_KEY")
-        self._db_host: Optional[str] = os.getenv("DB_HOST")
-        self._db_port_raw: Optional[str] = os.getenv("DB_PORT")
-        self._db_name: Optional[str] = os.getenv("DB_NAME")
-        self._db_user: Optional[str] = os.getenv("DB_USER")
-        self._db_password: Optional[str] = os.getenv("DB_PASSWORD")
+        self._api_key:      Optional[str] = os.getenv("API_KEY")
+        self._db_host:      Optional[str] = os.getenv("DB_HOST")
+        self._db_port_raw:  Optional[str] = os.getenv("DB_PORT")
+        self._db_name:      Optional[str] = os.getenv("DB_NAME")
+        self._db_user:      Optional[str] = os.getenv("DB_USER")
+        self._db_password:  Optional[str] = os.getenv("DB_PASSWORD")
 
-        # Type conversion and validation (now non‑strict for DAG parsing)
-        self.API_KEY = self._validate_non_empty("API_KEY", self._api_key)
-        self.DB_HOST = self._validate_non_empty("DB_HOST", self._db_host)
+        # Required — raises EnvironmentError immediately if missing
+        self.API_KEY   = self._require("API_KEY",   self._api_key)
+        self.DB_HOST   = self._require("DB_HOST",   self._db_host)
+        self.DB_NAME   = self._require("DB_NAME",   self._db_name)
+        self.DB_USER   = self._require("DB_USER",   self._db_user)
+
+        # Optional — logs a warning, does not raise
+        self.DB_PASSWORD = self._warn_if_missing("DB_PASSWORD", self._db_password)
+
         self.DB_PORT = self._validate_port(self._db_port_raw)
-        self.DB_NAME = self._validate_non_empty("DB_NAME", self._db_name)
-        self.DB_USER = self._validate_non_empty("DB_USER", self._db_user)
-        self.DB_PASSWORD = self._validate_non_empty("DB_PASSWORD", self._db_password)
-
-        # Optional: add format checks (e.g., API key length)
         self._validate_api_key_format()
-
         logger.info("Configuration validated successfully")
 
-    def _validate_non_empty(self, name: str, value: Optional[str]) -> str:
-        """
-        Ensure the variable is not None or empty.
-        If missing, log a warning and return empty string.
-        This allows DAG parsing to succeed even if environment variables are not set.
-        """
+    def _require(self, name: str, value: Optional[str]) -> str:
+        """Raise immediately if a required environment variable is missing or empty."""
+        if not value or not value.strip():
+            raise EnvironmentError(
+                f"Required environment variable '{name}' is not set. "
+                f"Check your .env file or container environment."
+            )
+        return value.strip()
+
+    def _warn_if_missing(self, name: str, value: Optional[str]) -> str:
+        """Log a warning for optional variables, but do not raise."""
         if not value:
-            logger.warning(f"Environment variable {name} not set, using empty value")
+            logger.warning(f"Optional environment variable '{name}' is not set.")
             return ""
         return value
 
     def _validate_port(self, port_str: Optional[str]) -> int:
-        """
-        Convert DB_PORT to int and validate range.
-        If missing, default to 5432.
-        """
         if not port_str or port_str.strip() == "":
             logger.warning("DB_PORT not set, defaulting to 5432")
             return 5432
@@ -62,21 +63,15 @@ class Config:
                 raise ValueError
             return port
         except ValueError:
-            logger.error(f"Invalid DB_PORT: {port_str} (must be an integer between 1 and 65535)")
-            raise EnvironmentError(f"Invalid DB_PORT: {port_str} (must be an integer between 1 and 65535)")
+            raise EnvironmentError(
+                f"Invalid DB_PORT: '{port_str}' — must be an integer between 1 and 65535"
+            )
 
     def _validate_api_key_format(self) -> None:
-        """
-        Basic sanity check for API key (e.g., length).
-        Skip if API_KEY is empty.
-        """
-        if self.API_KEY and len(self.API_KEY) < 10:
-            logger.warning(f"API_KEY seems too short: {self.API_KEY} (length {len(self.API_KEY)})")
+        if len(self.API_KEY) < 10:
+            logger.warning(f"API_KEY seems too short (length {len(self.API_KEY)}) — is it correct?")
 
     def get_db_connection_string(self) -> str:
-        """
-        Generate PostgreSQL connection string.
-        """
         return (
             f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"

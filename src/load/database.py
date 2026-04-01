@@ -13,14 +13,6 @@ from src.utils.logger import logger
 
 
 class DatabaseLoader:
-    """
-    Handles all database operations for the stock ETL pipeline.
-    - NUMERIC(10,4) columns for financial precision
-    - Connection pooling
-    - Batch UPSERT with chunking and retry
-    - Data quality audit logging
-    """
-
     def __init__(self, db_connection_string: str, batch_size: int = 1000) -> None:
         self.batch_size = batch_size
         self.engine = create_engine(
@@ -34,17 +26,13 @@ class DatabaseLoader:
         )
         self.metadata = MetaData()
 
-        # Define tables
         self.stocks = Table(
-            "stocks",
-            self.metadata,
+            "stocks", self.metadata,
             Column("id", Integer, primary_key=True),
             Column("symbol", String(10), unique=True, nullable=False),
         )
-
         self.stock_prices = Table(
-            "stock_prices",
-            self.metadata,
+            "stock_prices", self.metadata,
             Column("stock_id", Integer, primary_key=True),
             Column("date", Date, primary_key=True),
             Column("open",  Numeric(10, 4)),
@@ -53,10 +41,8 @@ class DatabaseLoader:
             Column("close", Numeric(10, 4)),
             Column("volume", BigInteger),
         )
-
         self.data_quality_log = Table(
-            "data_quality_log",
-            self.metadata,
+            "data_quality_log", self.metadata,
             Column("id", Integer, primary_key=True),
             Column("symbol", String(10)),
             Column("run_id", Text),
@@ -72,25 +58,21 @@ class DatabaseLoader:
             Column("status", String(20)),
             Column("error_message", Text),
         )
-
-        # Ensure tables exist in DB
         self.ensure_tables_exist()
-
         logger.info("DatabaseLoader initialized")
 
     def ensure_tables_exist(self):
-        """Create tables if they don't exist yet."""
         try:
-            with self.engine.begin() as conn:
-                self.metadata.create_all(conn)
+            # SA 2.0: pass engine directly to create_all
+            self.metadata.create_all(self.engine)
             logger.info("All tables ensured to exist")
         except SQLAlchemyError as e:
             logger.error(f"Failed to ensure tables exist: {e}")
             raise
 
     def get_latest_date(self, symbol: str) -> Optional[date]:
-        """Return the most recent date loaded for a symbol, or None."""
         try:
+            # SA 2.0: use engine.connect() as context manager, execute() returns CursorResult
             with self.engine.connect() as conn:
                 stock_id = conn.execute(
                     select(self.stocks.c.id).where(self.stocks.c.symbol == symbol)
@@ -114,7 +96,7 @@ class DatabaseLoader:
             return None
 
     def _get_or_create_stock_id(self, conn, symbol: str) -> int:
-        """Atomic upsert on the stocks dimension table."""
+        # SA 2.0: insert().returning() still works, but fetchone() returns a Row
         result = conn.execute(
             insert(self.stocks)
             .values(symbol=symbol)
@@ -126,6 +108,7 @@ class DatabaseLoader:
             logger.info(f"Inserted new stock: {symbol} → id {row[0]}")
             return row[0]
 
+        # SA 2.0: scalar_one() still supported
         stock_id = conn.execute(
             select(self.stocks.c.id).where(self.stocks.c.symbol == symbol)
         ).scalar_one()
@@ -133,7 +116,6 @@ class DatabaseLoader:
         return stock_id
 
     def _execute_with_retry(self, operation, max_retries: int = 3):
-        """Retry transient DB errors with exponential backoff."""
         delay = 1
         for attempt in range(1, max_retries + 1):
             try:
@@ -150,7 +132,6 @@ class DatabaseLoader:
                 raise
 
     def upsert_dataframe(self, df: pd.DataFrame, symbol: str) -> None:
-        """Batch UPSERT a DataFrame into stock_prices."""
         if df.empty:
             logger.info(f"No data to upsert for {symbol}")
             return
@@ -158,7 +139,8 @@ class DatabaseLoader:
         start = time.time()
         total = len(df)
 
-        with self.engine.connect() as conn:
+        # SA 2.0: engine.begin() still works as a context manager
+        with self.engine.begin() as conn:
             stock_id = self._get_or_create_stock_id(conn, symbol)
 
         records = df.copy()
@@ -167,7 +149,7 @@ class DatabaseLoader:
         data = records.to_dict(orient="records")
 
         for i in range(0, len(data), self.batch_size):
-            self._upsert_chunk(data[i : i + self.batch_size])
+            self._upsert_chunk(data[i: i + self.batch_size])
 
         elapsed = time.time() - start
         logger.info(f"Upsert complete for {symbol}: {total} rows in {elapsed:.2f}s")
@@ -187,24 +169,13 @@ class DatabaseLoader:
                     },
                 )
                 conn.execute(stmt)
-
         self._execute_with_retry(do_upsert)
 
     def log_quality_metrics(
-        self,
-        symbol: str,
-        run_id: str,
-        rows_raw: int,
-        rows_transformed: int,
-        rows_validated: int,
-        rows_loaded: int,
-        api_latency_ms: int,
-        db_latency_ms: int,
-        pipeline_duration_s: float,
-        status: str = "success",
-        error_message: Optional[str] = None,
+        self, symbol, run_id, rows_raw, rows_transformed, rows_validated,
+        rows_loaded, api_latency_ms, db_latency_ms, pipeline_duration_s,
+        status="success", error_message=None,
     ) -> None:
-        """Insert one audit row into data_quality_log."""
         try:
             with self.engine.begin() as conn:
                 conn.execute(
@@ -226,5 +197,4 @@ class DatabaseLoader:
                 )
             logger.info(f"Quality metrics logged for {symbol} run {run_id}")
         except SQLAlchemyError as e:
-            # Never let audit logging crash the pipeline
             logger.warning(f"Failed to log quality metrics for {symbol}: {e}")

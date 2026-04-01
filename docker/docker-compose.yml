@@ -9,6 +9,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
@@ -70,7 +71,7 @@ services:
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
       API_KEY: ${API_KEY}
-      DB_HOST: ${DB_HOST}
+      DB_HOST: postgres
       DB_PORT: ${DB_PORT}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
@@ -121,7 +122,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       API_KEY: ${API_KEY}
-      DB_HOST: ${DB_HOST}
+      DB_HOST: postgres
       DB_PORT: ${DB_PORT}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
@@ -170,7 +171,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       API_KEY: ${API_KEY}
-      DB_HOST: ${DB_HOST}
+      DB_HOST: postgres
       DB_PORT: ${DB_PORT}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
@@ -214,7 +215,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       API_KEY: ${API_KEY}
-      DB_HOST: ${DB_HOST}
+      DB_HOST: postgres
       DB_PORT: ${DB_PORT}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
@@ -239,8 +240,7 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # 🟢 NEW SERVICES (Observability)
-
+  # Observability services
   pushgateway:
     image: prom/pushgateway:latest
     container_name: pushgateway
@@ -267,8 +267,13 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
     depends_on:
       - prometheus
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
 volumes:
   postgres_data:
