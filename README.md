@@ -41,7 +41,7 @@ flowchart TD
     PG --> PM[Prometheus]
     PM --> GF[Grafana Dashboard]
 
-    subgraph Airflow DAG — 4 symbols × 5 tasks in parallel
+    subgraph "Airflow DAG: 4 symbols x 5 tasks in parallel"
         EX
         TR
         VA
