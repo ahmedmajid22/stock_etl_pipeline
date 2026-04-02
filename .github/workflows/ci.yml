@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - run: pip install -r docker/requirements.txt
+      - run: pip install --upgrade pip && pip install -r docker/requirements.txt "numpy<2.0" "pandas>=2.0,<2.2"
 
       - run: pytest tests/unit -v --cov=src --cov-report=xml
 
