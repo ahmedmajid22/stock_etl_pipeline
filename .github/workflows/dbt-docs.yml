@@ -5,19 +5,29 @@ on:
     branches: [main]
     paths: ['dbt/**']
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   docs:
     runs-on: ubuntu-latest
-
+    # Skip if the dbt folder doesn't exist (prevents failures)
+    if: ${{ hashFiles('dbt/') != '' }}
     steps:
       - uses: actions/checkout@v4
-
-      - run: pip install dbt-postgres
-
-      - run: cd dbt && dbt docs generate --profiles-dir ./profiles
-
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dbt
+        run: pip install dbt-postgres
+      - name: Generate dbt docs
+        working-directory: dbt
+        run: dbt docs generate --profiles-dir ./profiles
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dbt/target
-
-      - uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
