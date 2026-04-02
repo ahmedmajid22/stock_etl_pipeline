@@ -4,7 +4,11 @@ datasources:
   - name: Prometheus
     type: prometheus
     uid: prometheus
+    orgId: 1
     access: proxy
     url: http://prometheus:9090
     isDefault: true
-    editable: false
+    editable: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s

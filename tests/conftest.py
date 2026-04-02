@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -31,9 +32,13 @@ def error_response():
 
 @pytest.fixture
 def valid_df():
-    """Clean, valid OHLCV DataFrame matching what the transformer produces."""
+    """
+    Clean, valid OHLCV DataFrame matching what the transformer produces.
+    Uses datetime.date objects for the date column — NOT pd.Timestamp —
+    because that is what transformer.py outputs after .dt.date conversion.
+    """
     return pd.DataFrame({
-        "date":   pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]),
+        "date":   [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 5)],
         "symbol": ["AAPL"] * 4,
         "open":   [187.15, 184.22, 182.15, 181.99],
         "high":   [188.44, 185.88, 183.09, 182.76],
@@ -64,13 +69,12 @@ def df_missing_column(valid_df):
     return valid_df.drop(columns=["volume"])
 
 
-# --- New fixture for integration tests ---
-
 @pytest.fixture(scope="function")
 def pg_loader():
     """
     Creates a DatabaseLoader pointed at a real PostgreSQL test database.
-    Requires a running PostgreSQL instance (use pytest-postgresql or a local one).
+    Requires a running PostgreSQL instance.
+    Set TEST_DATABASE_URL env var or use the default localhost connection.
     Cleans up all test data after each test.
     """
     import os
@@ -80,7 +84,6 @@ def pg_loader():
     )
     loader = DatabaseLoader(db_url)
     yield loader
-    # Teardown: wipe test data
     with loader.engine.begin() as conn:
         conn.execute(text("DELETE FROM data_quality_log"))
         conn.execute(text("DELETE FROM stock_prices"))

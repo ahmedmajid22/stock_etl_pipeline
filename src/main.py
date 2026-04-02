@@ -1,5 +1,6 @@
 import sys
 import uuid
+import os
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -13,7 +14,6 @@ from src.transform.validator import StockDataValidator
 from src.utils.logger import logger
 
 
-# Prometheus metrics push
 def _push_metrics(
     symbol,
     rows_loaded,
@@ -22,11 +22,16 @@ def _push_metrics(
     pipeline_duration_s,
     status,
 ):
+    """Push metrics to Prometheus Pushgateway."""
     try:
         from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
-        import os
 
-        gateway = os.getenv("PUSHGATEWAY_URL", "pushgateway:9091")
+        # Use localhost when running outside Docker, internal hostname inside Docker
+        default_gateway = (
+            "pushgateway:9091" if os.path.exists("/opt/airflow") else "localhost:9091"
+        )
+        gateway = os.getenv("PUSHGATEWAY_URL", default_gateway)
+
         registry = CollectorRegistry()
 
         Gauge("etl_rows_loaded", "Rows loaded", ["symbol"], registry=registry) \
@@ -45,9 +50,10 @@ def _push_metrics(
             .labels(symbol=symbol).set(1 if status == "success" else 0)
 
         push_to_gateway(gateway, job="stock_etl", registry=registry)
+        logger.info(f"Metrics pushed to Pushgateway at {gateway} for {symbol}")
 
     except Exception as e:
-        logger.warning(f"Metrics push failed: {e}")
+        logger.warning(f"Metrics push failed (gateway may not be running): {e}")
 
 
 def main(symbol: str = "AAPL") -> None:
@@ -59,7 +65,6 @@ def main(symbol: str = "AAPL") -> None:
     pipeline_start = datetime.now(timezone.utc)
     run_id = f"{pipeline_start.strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
-    # Metrics
     rows_raw = 0
     rows_transformed = 0
     rows_validated = 0
@@ -111,7 +116,6 @@ def main(symbol: str = "AAPL") -> None:
 
         if latest_db_date:
             before = len(df)
-            # Fix: compare date objects directly (no pd.Timestamp conversion)
             df = df[df["date"] > latest_db_date]
             logger.info(
                 f"INCREMENTAL: {len(df)} new rows (skipped {before - len(df)} already in DB)"
@@ -158,7 +162,6 @@ def main(symbol: str = "AAPL") -> None:
             error_message=error_message,
         )
 
-        # Push metrics to Prometheus
         _push_metrics(
             symbol,
             rows_loaded,

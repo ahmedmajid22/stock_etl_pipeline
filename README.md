@@ -80,6 +80,8 @@ Each symbol runs its own independent 5-task chain. Concurrent API calls are capp
 | **API concurrency cap** | Airflow pool `alpha_vantage_pool = 3` | Alpha Vantage free tier caps at 5 req/min; pool prevents 4 parallel tasks from hitting it simultaneously |
 | **Audit log** | `data_quality_log` table per run | Every pipeline run writes row counts, latencies, and status — queryable quality history |
 | **Partial DB index** | `idx_stock_prices_recent WHERE date >= now() - 90 days` | Dashboard queries for recent data are the hot path; partial index keeps them fast as the table grows |
+| **Prometheus `honor_labels`** | Set in `prometheus.yml` scrape config | Prevents Prometheus from overwriting the `symbol` label pushed by Pushgateway, ensuring per-symbol metrics are queryable in Grafana |
+| **Environment-aware Pushgateway URL** | Defaults to `localhost:9091` locally, `pushgateway:9091` inside Docker | Allows the pipeline to push metrics correctly whether run as `python -m src.main` or via Airflow workers |
 
 ---
 
@@ -87,7 +89,7 @@ Each symbol runs its own independent 5-task chain. Concurrent API calls are capp
 
 ### Prerequisites
 - Docker + Docker Compose
-- Python 3.11+ (for running tests locally)
+- Python 3.11+ (for running tests or the standalone pipeline locally)
 
 ### 1. Clone and configure
 
@@ -112,7 +114,7 @@ cd docker
 docker compose up -d
 ```
 
-This starts: PostgreSQL, Redis, Airflow webserver, Airflow scheduler, Airflow worker, Airflow init, Prometheus, Grafana.
+This starts: PostgreSQL, Redis, Airflow webserver, Airflow scheduler, Airflow worker, Airflow init, Prometheus, Grafana, and Pushgateway.
 
 ### 4. Wait for init, then open the UI
 
@@ -125,14 +127,29 @@ docker compose logs -f airflow-init  # wait for "completed successfully"
 | Airflow | http://localhost:8080 | admin / admin |
 | Grafana | http://localhost:3000 | admin / admin |
 | Prometheus | http://localhost:9090 | — |
+| Pushgateway | http://localhost:9091 | — |
 
-### 5. Trigger the DAG
+### 5. Trigger the pipeline
 
-In the Airflow UI, enable and trigger `stock_market_etl_v2`, or run locally:
+**Via Airflow UI:** enable and trigger `stock_market_etl_v2`
 
+**Standalone (local, no Airflow needed):**
 ```bash
-python -m src.main AAPL
+# Run from the project root, not the docker/ directory
+PUSHGATEWAY_URL=localhost:9091 python -m src.main AAPL
+PUSHGATEWAY_URL=localhost:9091 python -m src.main MSFT
+PUSHGATEWAY_URL=localhost:9091 python -m src.main GOOG
+PUSHGATEWAY_URL=localhost:9091 python -m src.main TSLA
 ```
+
+> **Note:** `PUSHGATEWAY_URL=localhost:9091` is required when running locally so metrics reach the Pushgateway container. Inside Airflow workers the URL defaults correctly to `pushgateway:9091`.
+
+### 6. View the Grafana dashboard
+
+1. Go to `http://localhost:3000` and log in (admin / admin)
+2. Navigate to **Dashboards → Stock ETL Pipeline**
+3. Set the time range to **Last 1 hour** to see freshly pushed metrics
+4. All 5 panels will populate: rows loaded, pipeline success, API latency, DB latency, and pipeline duration — broken down by symbol
 
 ---
 
@@ -178,7 +195,15 @@ tests/unit/test_validator.py::test_validate_drops_high_less_than_low PASSED
 ├── docker/
 │   ├── docker-compose.yml          # 8 services: Airflow, Postgres, Redis, observability
 │   ├── init_db.sql                 # Schema: stocks, stock_prices, data_quality_log
-│   ├── prometheus.yml
+│   ├── prometheus.yml              # Scrape config with honor_labels for Pushgateway
+│   ├── grafana/
+│   │   ├── dashboards/
+│   │   │   └── stock_etl.json     # Pre-built Stock ETL Pipeline dashboard
+│   │   └── provisioning/
+│   │       ├── dashboards/
+│   │       │   └── dashboard.yml  # Auto-loads dashboards from disk
+│   │       └── datasources/
+│   │           └── prometheus.yml # Auto-configures Prometheus datasource
 │   └── requirements.txt
 ├── src/
 │   ├── config/config.py            # Validated env-var config with warnings
@@ -193,9 +218,11 @@ tests/unit/test_validator.py::test_validate_drops_high_less_than_low PASSED
 │   ├── unit/
 │   │   ├── test_api_client.py
 │   │   ├── test_transformer.py
-│   │   └── test_validator.py
+│   │   ├── test_validator.py
+│   │   └── test_config.py
 │   ├── integration/
-│   │   └── test_pipeline.py        # End-to-end with mocked API + DB
+│   │   ├── test_pipeline.py        # End-to-end with mocked API + DB
+│   │   └── test_database.py        # Real DB upsert and audit log tests
 │   └── data/
 │       └── sample_av_response.json
 ├── .env.example
@@ -237,7 +264,7 @@ Pipeline metrics are pushed to Prometheus via Pushgateway after every run:
 | `etl_duration_s` | Total pipeline wall-clock time |
 | `etl_success` | 1 = success, 0 = failure |
 
-Grafana is available at `http://localhost:3000`. Add Prometheus (`http://prometheus:9090`) as a data source to build dashboards from these metrics.
+The Grafana dashboard at `http://localhost:3000` is **automatically provisioned** on first startup — no manual setup required. It displays all 5 metrics broken down by symbol (AAPL, MSFT, GOOG, TSLA) with a 30-second auto-refresh.
 
 Slack alerts are supported via an Airflow connection — add a `slack_webhook` connection (HTTP type, webhook URL in the host field) to enable failure notifications.
 
@@ -278,13 +305,32 @@ AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:your_password@
 AIRFLOW_UID=50000
 ```
 
+The `PUSHGATEWAY_URL` environment variable is optional. When running locally it defaults to `localhost:9091`; inside Docker it defaults to `pushgateway:9091`. Override it only if you have a non-standard setup.
+
+---
+
+## Troubleshooting
+
+**Grafana won't start / crashes on provisioning:**
+Grafana 12 changed how datasource UIDs are resolved during provisioning. Ensure `docker/grafana/provisioning/datasources/prometheus.yml` includes `orgId: 1` and `editable: true`. If the issue persists after editing the file, run `docker compose down -v && docker compose up -d` to wipe the Grafana volume and force a clean provisioning.
+
+**Metrics not appearing in Grafana panels:**
+Ensure `docker/prometheus.yml` has `honor_labels: true` under the pushgateway scrape config. Without it, Prometheus strips the `symbol` label from pushed metrics and per-symbol Grafana queries return no data. After editing the file run `docker compose restart prometheus`.
+
+**Running standalone pipeline — metrics not reaching Grafana:**
+Always prefix the command with `PUSHGATEWAY_URL=localhost:9091` when running outside Docker. The hostname `pushgateway` only resolves inside the Docker network.
+
+**Airflow DAG not visible:**
+Wait for `airflow-init` to complete (`docker compose logs -f airflow-init`), then refresh the Airflow UI. The DAG file is mounted from `airflow/dags/` so changes take effect without a container restart.
+
 ---
 
 ## What I Would Add Next
 
-- **dbt models** — 30-day moving average, daily returns, and volatility calculations sitting on top of `stock_prices`; separates transformation logic from ingestion
+- **dbt models** — 30-day moving average, daily returns, and volatility calculations on top of `stock_prices`; separates analytical transformation logic from ingestion
 - **S3 / MinIO staging** — replace local Parquet files with object storage for durability and horizontal scaling
-- **Grafana dashboard JSON** — provision a pre-built dashboard via `docker/grafana/dashboards/` so the observability layer works out of the box
 - **pre-commit hooks** — `black`, `ruff`, and `detect-secrets` to enforce style and catch accidental credential commits before they hit git history
-- **Expanded symbol list** — parameterise the DAG so symbols are configurable without a code change
+- **Expanded symbol list** — parameterise the DAG so symbols are configurable via Airflow Variables without a code change
 - **dbt tests** — data freshness checks and referential integrity assertions at the warehouse layer
+- **Airflow DAG audit metrics** — push per-task latency and row counts from the DAG's `load_task` to Pushgateway so the Grafana dashboard reflects Airflow-triggered runs, not just standalone ones
+```
