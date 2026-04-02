@@ -1,0 +1,23 @@
+name: dbt docs
+
+on:
+  push:
+    branches: [main]
+    paths: ['dbt/**']
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pip install dbt-postgres
+
+      - run: cd dbt && dbt docs generate --profiles-dir ./profiles
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dbt/target
+
+      - uses: actions/deploy-pages@v4

@@ -17,18 +17,18 @@ class Config:
             load_dotenv()
             logger.info("Loaded environment from .env file")
 
-        self._api_key:      Optional[str] = os.getenv("API_KEY")
-        self._db_host:      Optional[str] = os.getenv("DB_HOST")
-        self._db_port_raw:  Optional[str] = os.getenv("DB_PORT")
-        self._db_name:      Optional[str] = os.getenv("DB_NAME")
-        self._db_user:      Optional[str] = os.getenv("DB_USER")
-        self._db_password:  Optional[str] = os.getenv("DB_PASSWORD")
+        self._api_key: Optional[str] = os.getenv("API_KEY")
+        self._db_host: Optional[str] = os.getenv("DB_HOST")
+        self._db_port_raw: Optional[str] = os.getenv("DB_PORT")
+        self._db_name: Optional[str] = os.getenv("DB_NAME")
+        self._db_user: Optional[str] = os.getenv("DB_USER")
+        self._db_password: Optional[str] = os.getenv("DB_PASSWORD")
 
         # Required — raises EnvironmentError immediately if missing
-        self.API_KEY   = self._require("API_KEY",   self._api_key)
-        self.DB_HOST   = self._require("DB_HOST",   self._db_host)
-        self.DB_NAME   = self._require("DB_NAME",   self._db_name)
-        self.DB_USER   = self._require("DB_USER",   self._db_user)
+        self.API_KEY = self._require("API_KEY", self._api_key)
+        self.DB_HOST = self._require("DB_HOST", self._db_host)
+        self.DB_NAME = self._require("DB_NAME", self._db_name)
+        self.DB_USER = self._require("DB_USER", self._db_user)
 
         # Optional — logs a warning, does not raise
         self.DB_PASSWORD = self._warn_if_missing("DB_PASSWORD", self._db_password)
@@ -69,7 +69,9 @@ class Config:
 
     def _validate_api_key_format(self) -> None:
         if len(self.API_KEY) < 10:
-            logger.warning(f"API_KEY seems too short (length {len(self.API_KEY)}) — is it correct?")
+            logger.warning(
+                f"API_KEY seems too short (length {len(self.API_KEY)}) — is it correct?"
+            )
 
     def get_db_connection_string(self) -> str:
         return (

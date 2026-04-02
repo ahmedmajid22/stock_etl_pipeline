@@ -3,7 +3,6 @@ import uuid
 import os
 from datetime import datetime, timezone
 
-import pandas as pd
 
 from src.config.config import Config
 from src.extract.api_client import AlphaVantageClient
@@ -34,20 +33,25 @@ def _push_metrics(
 
         registry = CollectorRegistry()
 
-        Gauge("etl_rows_loaded", "Rows loaded", ["symbol"], registry=registry) \
-            .labels(symbol=symbol).set(rows_loaded)
+        Gauge("etl_rows_loaded", "Rows loaded", ["symbol"], registry=registry).labels(
+            symbol=symbol
+        ).set(rows_loaded)
 
-        Gauge("etl_api_latency_ms", "API latency ms", ["symbol"], registry=registry) \
-            .labels(symbol=symbol).set(api_latency_ms)
+        Gauge(
+            "etl_api_latency_ms", "API latency ms", ["symbol"], registry=registry
+        ).labels(symbol=symbol).set(api_latency_ms)
 
-        Gauge("etl_db_latency_ms", "DB latency ms", ["symbol"], registry=registry) \
-            .labels(symbol=symbol).set(db_latency_ms)
+        Gauge(
+            "etl_db_latency_ms", "DB latency ms", ["symbol"], registry=registry
+        ).labels(symbol=symbol).set(db_latency_ms)
 
-        Gauge("etl_duration_s", "Pipeline duration seconds", ["symbol"], registry=registry) \
-            .labels(symbol=symbol).set(pipeline_duration_s)
+        Gauge(
+            "etl_duration_s", "Pipeline duration seconds", ["symbol"], registry=registry
+        ).labels(symbol=symbol).set(pipeline_duration_s)
 
-        Gauge("etl_success", "Pipeline success (1/0)", ["symbol"], registry=registry) \
-            .labels(symbol=symbol).set(1 if status == "success" else 0)
+        Gauge(
+            "etl_success", "Pipeline success (1/0)", ["symbol"], registry=registry
+        ).labels(symbol=symbol).set(1 if status == "success" else 0)
 
         push_to_gateway(gateway, job="stock_etl", registry=registry)
         logger.info(f"Metrics pushed to Pushgateway at {gateway} for {symbol}")
@@ -93,7 +97,9 @@ def main(symbol: str = "AAPL") -> None:
         api_latency_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
 
         rows_raw = len(raw_data.get("Time Series (Daily)", {}))
-        logger.info(f"EXTRACT complete: rows_raw={rows_raw} api_latency_ms={api_latency_ms}")
+        logger.info(
+            f"EXTRACT complete: rows_raw={rows_raw} api_latency_ms={api_latency_ms}"
+        )
 
         # ── Transform ───────────────────────────────────────────
         logger.info("TRANSFORM: converting to DataFrame")
@@ -137,7 +143,9 @@ def main(symbol: str = "AAPL") -> None:
         db_latency_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
 
         rows_loaded = len(df)
-        logger.info(f"LOAD complete: rows_loaded={rows_loaded} db_latency_ms={db_latency_ms}")
+        logger.info(
+            f"LOAD complete: rows_loaded={rows_loaded} db_latency_ms={db_latency_ms}"
+        )
 
     except Exception as e:
         status = "failed"
@@ -146,7 +154,9 @@ def main(symbol: str = "AAPL") -> None:
         raise
 
     finally:
-        pipeline_duration_s = (datetime.now(timezone.utc) - pipeline_start).total_seconds()
+        pipeline_duration_s = (
+            datetime.now(timezone.utc) - pipeline_start
+        ).total_seconds()
 
         loader.log_quality_metrics(
             symbol=symbol,

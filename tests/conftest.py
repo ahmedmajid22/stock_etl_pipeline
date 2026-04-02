@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from src.load.database import DatabaseLoader
 
 
@@ -37,15 +37,22 @@ def valid_df():
     Uses datetime.date objects for the date column — NOT pd.Timestamp —
     because that is what transformer.py outputs after .dt.date conversion.
     """
-    return pd.DataFrame({
-        "date":   [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 5)],
-        "symbol": ["AAPL"] * 4,
-        "open":   [187.15, 184.22, 182.15, 181.99],
-        "high":   [188.44, 185.88, 183.09, 182.76],
-        "low":    [183.88, 183.43, 180.93, 180.17],
-        "close":  [185.85, 184.25, 181.91, 181.18],
-        "volume": [128256700, 58414460, 71983700, 62983920],
-    })
+    return pd.DataFrame(
+        {
+            "date": [
+                date(2024, 1, 2),
+                date(2024, 1, 3),
+                date(2024, 1, 4),
+                date(2024, 1, 5),
+            ],
+            "symbol": ["AAPL"] * 4,
+            "open": [187.15, 184.22, 182.15, 181.99],
+            "high": [188.44, 185.88, 183.09, 182.76],
+            "low": [183.88, 183.43, 180.93, 180.17],
+            "close": [185.85, 184.25, 181.91, 181.18],
+            "volume": [128256700, 58414460, 71983700, 62983920],
+        }
+    )
 
 
 @pytest.fixture
@@ -78,9 +85,9 @@ def pg_loader():
     Cleans up all test data after each test.
     """
     import os
+
     db_url = os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql://postgres:@localhost:5432/stock_db_test"
+        "TEST_DATABASE_URL", "postgresql://postgres:@localhost:5432/stock_db_test"
     )
     loader = DatabaseLoader(db_url)
     yield loader

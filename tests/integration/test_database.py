@@ -7,12 +7,11 @@ Set TEST_DATABASE_URL env var, or use the default localhost connection.
 Run with:
     pytest tests/integration/test_database.py -v -m integration
 """
+
 import pytest
 import pandas as pd
 from datetime import date
 from sqlalchemy import text
-
-from src.load.database import DatabaseLoader
 
 
 pytestmark = pytest.mark.integration  # skip by default unless -m integration
@@ -21,15 +20,22 @@ pytestmark = pytest.mark.integration  # skip by default unless -m integration
 @pytest.fixture
 def sample_df():
     """4 rows of clean OHLCV data matching what the transformer produces."""
-    return pd.DataFrame({
-        "date":   [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 5)],
-        "symbol": ["AAPL"] * 4,
-        "open":   [187.15, 184.22, 182.15, 181.99],
-        "high":   [188.44, 185.88, 183.09, 182.76],
-        "low":    [183.88, 183.43, 180.93, 180.17],
-        "close":  [185.85, 184.25, 181.91, 181.18],
-        "volume": [128256700, 58414460, 71983700, 62983920],
-    })
+    return pd.DataFrame(
+        {
+            "date": [
+                date(2024, 1, 2),
+                date(2024, 1, 3),
+                date(2024, 1, 4),
+                date(2024, 1, 5),
+            ],
+            "symbol": ["AAPL"] * 4,
+            "open": [187.15, 184.22, 182.15, 181.99],
+            "high": [188.44, 185.88, 183.09, 182.76],
+            "low": [183.88, 183.43, 180.93, 180.17],
+            "close": [185.85, 184.25, 181.91, 181.18],
+            "volume": [128256700, 58414460, 71983700, 62983920],
+        }
+    )
 
 
 class TestUpsertDataframe:
@@ -40,7 +46,9 @@ class TestUpsertDataframe:
 
         with pg_loader.engine.connect() as conn:
             count = conn.execute(
-                text("SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id = s.id WHERE s.symbol = 'AAPL'")
+                text(
+                    "SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id = s.id WHERE s.symbol = 'AAPL'"
+                )
             ).scalar()
 
         assert count == 4
@@ -52,7 +60,9 @@ class TestUpsertDataframe:
 
         with pg_loader.engine.connect() as conn:
             count = conn.execute(
-                text("SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id = s.id WHERE s.symbol = 'AAPL'")
+                text(
+                    "SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id = s.id WHERE s.symbol = 'AAPL'"
+                )
             ).scalar()
 
         assert count == 4, "Upsert should not duplicate rows on re-run"
@@ -68,14 +78,18 @@ class TestUpsertDataframe:
 
         with pg_loader.engine.connect() as conn:
             close_val = conn.execute(
-                text("SELECT close FROM stock_prices sp JOIN stocks s ON sp.stock_id = s.id WHERE s.symbol='AAPL' AND sp.date='2024-01-02'")
+                text(
+                    "SELECT close FROM stock_prices sp JOIN stocks s ON sp.stock_id = s.id WHERE s.symbol='AAPL' AND sp.date='2024-01-02'"
+                )
             ).scalar()
 
         assert float(close_val) == pytest.approx(999.99, abs=0.001)
 
     def test_empty_dataframe_does_not_raise(self, pg_loader):
         """Empty DataFrame should be a no-op, not an error."""
-        empty_df = pd.DataFrame(columns=["date", "symbol", "open", "high", "low", "close", "volume"])
+        empty_df = pd.DataFrame(
+            columns=["date", "symbol", "open", "high", "low", "close", "volume"]
+        )
         pg_loader.upsert_dataframe(empty_df, "AAPL")  # should not raise
 
     def test_stock_dimension_row_created(self, pg_loader, sample_df):
@@ -98,8 +112,16 @@ class TestUpsertDataframe:
         pg_loader.upsert_dataframe(msft_df, "MSFT")
 
         with pg_loader.engine.connect() as conn:
-            aapl_count = conn.execute(text("SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id=s.id WHERE s.symbol='AAPL'")).scalar()
-            msft_count = conn.execute(text("SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id=s.id WHERE s.symbol='MSFT'")).scalar()
+            aapl_count = conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id=s.id WHERE s.symbol='AAPL'"
+                )
+            ).scalar()
+            msft_count = conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM stock_prices sp JOIN stocks s ON sp.stock_id=s.id WHERE s.symbol='MSFT'"
+                )
+            ).scalar()
 
         assert aapl_count == 4
         assert msft_count == 4
@@ -124,7 +146,9 @@ class TestDataQualityLog:
 
         with pg_loader.engine.connect() as conn:
             count = conn.execute(
-                text("SELECT COUNT(*) FROM data_quality_log WHERE run_id = 'test-run-001'")
+                text(
+                    "SELECT COUNT(*) FROM data_quality_log WHERE run_id = 'test-run-001'"
+                )
             ).scalar()
 
         assert count == 1
@@ -147,7 +171,9 @@ class TestDataQualityLog:
 
         with pg_loader.engine.connect() as conn:
             row = conn.execute(
-                text("SELECT status, error_message FROM data_quality_log WHERE run_id = 'test-run-fail-001'")
+                text(
+                    "SELECT status, error_message FROM data_quality_log WHERE run_id = 'test-run-fail-001'"
+                )
             ).fetchone()
 
         assert row.status == "failed"

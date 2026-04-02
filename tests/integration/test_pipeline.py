@@ -1,11 +1,9 @@
 import pandas as pd
-import pytest
 from unittest.mock import MagicMock
 
 from src.main import main
 from src.extract.api_client import AlphaVantageClient
 from src.load.database import DatabaseLoader
-from src.storage.staging import write_stage
 
 
 # Sample mocked API response
@@ -16,15 +14,15 @@ MOCK_API_RESPONSE = {
             "2. high": "110",
             "3. low": "95",
             "4. close": "105",
-            "5. volume": "1000000"
+            "5. volume": "1000000",
         },
         "2024-01-02": {
             "1. open": "98",
             "2. high": "102",
             "3. low": "97",
             "4. close": "100",
-            "5. volume": "800000"
-        }
+            "5. volume": "800000",
+        },
     }
 }
 
@@ -50,22 +48,15 @@ def test_pipeline_integration(monkeypatch):
     # -----------------------------
     # Patch dependencies inside main
     # -----------------------------
-    monkeypatch.setattr(
-        "src.main.AlphaVantageClient",
-        lambda api_key: mock_client
-    )
+    monkeypatch.setattr("src.main.AlphaVantageClient", lambda api_key: mock_client)
 
-    monkeypatch.setattr(
-        "src.main.DatabaseLoader",
-        lambda conn: mock_loader
-    )
+    monkeypatch.setattr("src.main.DatabaseLoader", lambda conn: mock_loader)
 
     # -----------------------------
     # Mock write_stage to avoid filesystem writes
     # -----------------------------
     monkeypatch.setattr(
-        "src.main.write_stage",
-        lambda df, symbol, run_id: "/tmp/fake_path.parquet"
+        "src.main.write_stage", lambda df, symbol, run_id: "/tmp/fake_path.parquet"
     )
 
     # -----------------------------

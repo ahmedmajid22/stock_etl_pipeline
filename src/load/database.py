@@ -3,7 +3,7 @@ from datetime import datetime, date, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from sqlalchemy import create_engine, MetaData, Table, Column, select, func, text
+from sqlalchemy import create_engine, MetaData, Table, Column, select, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError
 from sqlalchemy.pool import QueuePool
@@ -27,22 +27,25 @@ class DatabaseLoader:
         self.metadata = MetaData()
 
         self.stocks = Table(
-            "stocks", self.metadata,
+            "stocks",
+            self.metadata,
             Column("id", Integer, primary_key=True),
             Column("symbol", String(10), unique=True, nullable=False),
         )
         self.stock_prices = Table(
-            "stock_prices", self.metadata,
+            "stock_prices",
+            self.metadata,
             Column("stock_id", Integer, primary_key=True),
             Column("date", Date, primary_key=True),
-            Column("open",  Numeric(10, 4)),
-            Column("high",  Numeric(10, 4)),
-            Column("low",   Numeric(10, 4)),
+            Column("open", Numeric(10, 4)),
+            Column("high", Numeric(10, 4)),
+            Column("low", Numeric(10, 4)),
             Column("close", Numeric(10, 4)),
             Column("volume", BigInteger),
         )
         self.data_quality_log = Table(
-            "data_quality_log", self.metadata,
+            "data_quality_log",
+            self.metadata,
             Column("id", Integer, primary_key=True),
             Column("symbol", String(10)),
             Column("run_id", Text),
@@ -124,7 +127,9 @@ class DatabaseLoader:
                 if attempt == max_retries:
                     logger.error(f"DB operation failed after {max_retries} attempts")
                     raise
-                logger.warning(f"Transient DB error (attempt {attempt}): {e}. Retry in {delay}s")
+                logger.warning(
+                    f"Transient DB error (attempt {attempt}): {e}. Retry in {delay}s"
+                )
                 time.sleep(delay)
                 delay *= 2
             except SQLAlchemyError as e:
@@ -149,7 +154,7 @@ class DatabaseLoader:
         data = records.to_dict(orient="records")
 
         for i in range(0, len(data), self.batch_size):
-            self._upsert_chunk(data[i: i + self.batch_size])
+            self._upsert_chunk(data[i : i + self.batch_size])
 
         elapsed = time.time() - start
         logger.info(f"Upsert complete for {symbol}: {total} rows in {elapsed:.2f}s")
@@ -161,20 +166,30 @@ class DatabaseLoader:
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["stock_id", "date"],
                     set_={
-                        "open":   stmt.excluded.open,
-                        "high":   stmt.excluded.high,
-                        "low":    stmt.excluded.low,
-                        "close":  stmt.excluded.close,
+                        "open": stmt.excluded.open,
+                        "high": stmt.excluded.high,
+                        "low": stmt.excluded.low,
+                        "close": stmt.excluded.close,
                         "volume": stmt.excluded.volume,
                     },
                 )
                 conn.execute(stmt)
+
         self._execute_with_retry(do_upsert)
 
     def log_quality_metrics(
-        self, symbol, run_id, rows_raw, rows_transformed, rows_validated,
-        rows_loaded, api_latency_ms, db_latency_ms, pipeline_duration_s,
-        status="success", error_message=None,
+        self,
+        symbol,
+        run_id,
+        rows_raw,
+        rows_transformed,
+        rows_validated,
+        rows_loaded,
+        api_latency_ms,
+        db_latency_ms,
+        pipeline_duration_s,
+        status="success",
+        error_message=None,
     ) -> None:
         try:
             with self.engine.begin() as conn:

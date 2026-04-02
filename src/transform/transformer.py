@@ -28,13 +28,15 @@ class StockDataTransformer:
         df = pd.DataFrame.from_dict(time_series, orient="index")
 
         # Rename columns
-        df = df.rename(columns={
-            "1. open": "open",
-            "2. high": "high",
-            "3. low": "low",
-            "4. close": "close",
-            "5. volume": "volume"
-        })
+        df = df.rename(
+            columns={
+                "1. open": "open",
+                "2. high": "high",
+                "3. low": "low",
+                "4. close": "close",
+                "5. volume": "volume",
+            }
+        )
 
         # Add symbol
         df["symbol"] = symbol

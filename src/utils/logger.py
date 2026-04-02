@@ -23,9 +23,9 @@ logger.add(
     retention="7 days",
     level="INFO",
     format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name} | {message}",
-    enqueue=True,       # thread-safe for Celery workers
-    backtrace=True,     # full traceback on exceptions
-    diagnose=True,      # variable values in tracebacks
+    enqueue=True,  # thread-safe for Celery workers
+    backtrace=True,  # full traceback on exceptions
+    diagnose=True,  # variable values in tracebacks
 )
 
 # Stdout handler — visible in Airflow task logs UI

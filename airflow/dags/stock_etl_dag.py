@@ -16,6 +16,7 @@ def failure_callback(context):
     """
     try:
         from airflow.hooks.base import BaseHook
+
         conn = BaseHook.get_connection("slack_webhook")
         webhook_url = conn.host
         if not webhook_url:
@@ -25,6 +26,7 @@ def failure_callback(context):
 
     try:
         import requests
+
         ti = context["task_instance"]
         requests.post(
             webhook_url,
@@ -41,6 +43,7 @@ def failure_callback(context):
         )
     except Exception as e:
         from src.utils.logger import logger
+
         logger.warning(f"Slack alert failed: {e}")
 
 
@@ -56,6 +59,7 @@ default_args = {
 # ─────────────────────────────────────────────
 # Task callables
 # ─────────────────────────────────────────────
+
 
 def extract_task(symbol: str, **context):
     from src.config.config import Config
@@ -95,7 +99,9 @@ def transform_task(symbol: str, **context):
 
     ti.xcom_push(key=f"transformed_path_{symbol}", value=str(transformed_path))
 
-    logger.info(f"TRANSFORM complete: {symbol} → {len(df)} records → {transformed_path}")
+    logger.info(
+        f"TRANSFORM complete: {symbol} → {len(df)} records → {transformed_path}"
+    )
     return f"Transformed {len(df)} records for {symbol}"
 
 
@@ -106,7 +112,9 @@ def validate_task(symbol: str, **context):
     from src.utils.logger import logger
 
     ti = context["ti"]
-    path = ti.xcom_pull(key=f"transformed_path_{symbol}", task_ids=f"transform_{symbol}")
+    path = ti.xcom_pull(
+        key=f"transformed_path_{symbol}", task_ids=f"transform_{symbol}"
+    )
     run_id = ti.xcom_pull(key=f"run_id_{symbol}", task_ids=f"extract_{symbol}")
 
     df = pd.read_parquet(path)
@@ -188,7 +196,7 @@ into PostgreSQL. Each symbol runs 5 tasks in parallel.
             python_callable=extract_task,
             op_args=[symbol],
             execution_timeout=timedelta(minutes=5),
-            pool="alpha_vantage_pool",   # cap concurrent API calls
+            pool="alpha_vantage_pool",  # cap concurrent API calls
             pool_slots=1,
         )
         transform = PythonOperator(

@@ -1,12 +1,14 @@
-import pandas as pd
-from pathlib import Path
 from datetime import datetime, timezone
-UTC = timezone.utc
-import uuid
-from typing import Optional, Union
+from pathlib import Path
+from typing import Union
 import glob
 import json
 import os
+import uuid
+
+import pandas as pd
+
+UTC = timezone.utc
 
 # ─────────────────────────────────────────────
 # Environment-aware base path (Docker vs local)
@@ -20,10 +22,10 @@ else:
 STAGING_ROOT = _BASE / "staging"
 RAW_STAGING_ROOT = _BASE / "raw"
 
+# ─────────────────────────────────────────────
+# Raw JSON staging
+# ─────────────────────────────────────────────
 
-# ─────────────────────────────────────────────
-# Raw JSON staging (NEW)
-# ─────────────────────────────────────────────
 
 def write_raw_stage(raw_data: dict, symbol: str, run_id: str) -> Path:
     """
@@ -53,18 +55,19 @@ def read_raw_stage(path: Union[str, Path]) -> dict:
 
 
 # ─────────────────────────────────────────────
-# Parquet staging (existing logic)
+# Parquet staging
 # ─────────────────────────────────────────────
+
 
 def write_stage(df: pd.DataFrame, symbol: str, run_id: str) -> Path:
     """
     Save dataframe to a parquet file in staging with partitioned structure.
-    
-    Structure: data/staging/symbol=AAPL/year=2025/month=11/day=07/uuid.parquet
+
+    Structure: data/staging/symbol=AAPL/year=YYYY/month=MM/day=DD/file.parquet
     """
-    if not df.empty and 'date' in df.columns:
-        latest_date = df['date'].max()
-        if hasattr(latest_date, 'to_pydatetime'):
+    if not df.empty and "date" in df.columns:
+        latest_date = df["date"].max()
+        if hasattr(latest_date, "to_pydatetime"):
             latest_date = latest_date.to_pydatetime()
     else:
         latest_date = datetime.now(UTC)
@@ -103,7 +106,9 @@ def read_stage(symbol: str, run_id: str) -> pd.DataFrame:
     if old_path.exists():
         return pd.read_parquet(old_path)
 
-    raise FileNotFoundError(f"No staging file found for symbol={symbol}, run_id={run_id}")
+    raise FileNotFoundError(
+        f"No staging file found for symbol={symbol}, run_id={run_id}"
+    )
 
 
 def read_latest_stage(symbol: str) -> pd.DataFrame:

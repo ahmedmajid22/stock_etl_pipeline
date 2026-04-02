@@ -13,7 +13,15 @@ def transformer():
 def test_transform_happy_path(transformer, sample_av_response):
     df = transformer.transform(sample_av_response, "AAPL")
     assert len(df) == 4
-    assert set(df.columns) == {"date", "open", "high", "low", "close", "volume", "symbol"}
+    assert set(df.columns) == {
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "symbol",
+    }
     assert (df["symbol"] == "AAPL").all()
 
 

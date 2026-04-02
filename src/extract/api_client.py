@@ -1,6 +1,5 @@
 import requests
 import time
-import random
 from typing import Dict, Optional
 from enum import Enum
 
@@ -8,13 +7,14 @@ from src.utils.logger import logger
 
 
 class CircuitState(Enum):
-    CLOSED = "closed"          # normal operation
-    OPEN = "open"              # failing, no calls allowed
-    HALF_OPEN = "half_open"    # testing after cooldown
+    CLOSED = "closed"  # normal operation
+    OPEN = "open"  # failing, no calls allowed
+    HALF_OPEN = "half_open"  # testing after cooldown
 
 
 class RateLimitError(Exception):
     """Raised when API rate limit is hit."""
+
     pass
 
 
@@ -81,7 +81,10 @@ class AlphaVantageClient:
         """Increment failure count and possibly open circuit."""
         self.failure_count += 1
         self.last_failure_time = time.time()
-        if self.state == CircuitState.CLOSED and self.failure_count >= self.failure_threshold:
+        if (
+            self.state == CircuitState.CLOSED
+            and self.failure_count >= self.failure_threshold
+        ):
             logger.warning(f"Circuit breaker OPEN after {self.failure_count} failures")
             self.state = CircuitState.OPEN
         elif self.state == CircuitState.HALF_OPEN:
@@ -105,12 +108,13 @@ class AlphaVantageClient:
             "outputsize": "compact",
         }
 
-        max_retries = 1 
-        backoff_base = 2
+        max_retries = 1
 
         for attempt in range(1, max_retries + 1):
             try:
-                logger.info(f"Fetching daily stock data for {symbol}, attempt {attempt}")
+                logger.info(
+                    f"Fetching daily stock data for {symbol}, attempt {attempt}"
+                )
 
                 response = self.session.get(
                     self.BASE_URL,
@@ -128,11 +132,15 @@ class AlphaVantageClient:
                 # Rate limiting – raise a special exception so Airflow can retry
                 if "Note" in data or "Information" in data:
                     logger.warning(f"Rate limit hit for {symbol}")
-                    raise RateLimitError(f"Alpha Vantage rate limit exceeded for {symbol}")
+                    raise RateLimitError(
+                        f"Alpha Vantage rate limit exceeded for {symbol}"
+                    )
 
                 # Validate expected structure
                 if "Time Series (Daily)" not in data:
-                    raise ValueError(f"Unexpected API response structure for {symbol}: {data}")
+                    raise ValueError(
+                        f"Unexpected API response structure for {symbol}: {data}"
+                    )
 
                 # Success
                 self._record_success()
@@ -154,7 +162,9 @@ class AlphaVantageClient:
                 logger.warning(f"Timeout error (attempt {attempt}): {e}")
                 if attempt == max_retries:
                     self._record_failure()
-                    raise RuntimeError(f"Max retries exceeded for {symbol} due to timeouts")
+                    raise RuntimeError(
+                        f"Max retries exceeded for {symbol} due to timeouts"
+                    )
                 continue
 
             except (requests.RequestException, ValueError) as e:
