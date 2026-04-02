@@ -13,7 +13,6 @@ import pandas as pd
 from datetime import date
 from sqlalchemy import text
 
-
 pytestmark = pytest.mark.integration  # skip by default unless -m integration
 
 

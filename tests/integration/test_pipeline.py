@@ -5,7 +5,6 @@ from src.main import main
 from src.extract.api_client import AlphaVantageClient
 from src.load.database import DatabaseLoader
 
-
 # Sample mocked API response
 MOCK_API_RESPONSE = {
     "Time Series (Daily)": {

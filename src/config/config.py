@@ -3,7 +3,6 @@ from typing import Optional
 from dotenv import load_dotenv
 from src.utils.logger import logger
 
-
 # Variables that must be set — pipeline cannot run without them
 _REQUIRED_VARS = {"API_KEY", "DB_HOST", "DB_NAME", "DB_USER"}
 
