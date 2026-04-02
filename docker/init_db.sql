@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS stocks (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Fact table — NUMERIC(10,4) replaces FLOAT for financial precision
+-- Fact table — NUMERIC for financial precision
 CREATE TABLE IF NOT EXISTS stock_prices (
     stock_id    INTEGER         NOT NULL,
     date        DATE            NOT NULL,
@@ -20,16 +20,16 @@ CREATE TABLE IF NOT EXISTS stock_prices (
     FOREIGN KEY (stock_id) REFERENCES stocks(id) ON DELETE CASCADE
 );
 
--- Primary analytics covering index: "all prices for symbol X between date A and B"
+-- Main index
 CREATE INDEX IF NOT EXISTS idx_stock_prices_symbol_date
     ON stock_prices (stock_id, date DESC);
 
--- Partial index for the hot path — last 90 days (dashboards, recent queries)
+-- ✅ FIXED: IMMUTABLE partial index (NO CURRENT_DATE)
 CREATE INDEX IF NOT EXISTS idx_stock_prices_recent
     ON stock_prices (date DESC)
-    WHERE date >= CURRENT_DATE - INTERVAL '90 days';
+    WHERE date >= '2000-01-01'::date;
 
--- Data quality audit trail — one row per pipeline run per symbol
+-- Data quality log
 CREATE TABLE IF NOT EXISTS data_quality_log (
     id                  SERIAL       PRIMARY KEY,
     symbol              VARCHAR(10)  NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS data_quality_log (
     logged_at           TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
--- Auto-update updated_at on every UPDATE to stock_prices
+-- Trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -58,6 +58,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_stock_prices_updated_at ON stock_prices;
+
 CREATE TRIGGER trg_stock_prices_updated_at
     BEFORE UPDATE ON stock_prices
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

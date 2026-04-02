@@ -9,6 +9,7 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: true
+    version: 1   # ✅ CRITICAL FIX (Grafana 12)
     jsonData:
       httpMethod: POST
       timeInterval: 15s
