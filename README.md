@@ -333,4 +333,3 @@ Wait for `airflow-init` to complete (`docker compose logs -f airflow-init`), the
 - **Expanded symbol list** — parameterise the DAG so symbols are configurable via Airflow Variables without a code change
 - **dbt tests** — data freshness checks and referential integrity assertions at the warehouse layer
 - **Airflow DAG audit metrics** — push per-task latency and row counts from the DAG's `load_task` to Pushgateway so the Grafana dashboard reflects Airflow-triggered runs, not just standalone ones
-```
