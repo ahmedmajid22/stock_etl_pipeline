@@ -13,13 +13,11 @@ permissions:
 jobs:
   docs:
     runs-on: ubuntu-latest
-    # hashFiles requires a glob pattern, not a bare directory path
-    if: ${{ hashFiles('dbt/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.8'
       - name: Install dbt
         run: pip install dbt-postgres
       - name: Generate dbt docs

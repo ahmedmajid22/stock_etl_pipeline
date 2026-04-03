@@ -1,0 +1,14 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore logs
+airflow/logs/
+*.log
+
+# Ignore virtual environments
+venv/
+.env
+
+# Ignore Git
+.git/
