@@ -19,4 +19,6 @@ run:
 	PUSHGATEWAY_URL=localhost:9091 python -m src.main $(SYMBOL)
 
 install-hooks:
-	pip install pre-commit && pre-commit install
+	pip install pre-commit detect-secrets
+	detect-secrets scan > .secrets.baseline
+	pre-commit install

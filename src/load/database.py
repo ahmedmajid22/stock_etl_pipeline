@@ -3,11 +3,20 @@ from datetime import datetime, date, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from sqlalchemy import create_engine, MetaData, Table, Column, select, func
+from sqlalchemy import create_engine, MetaData, Table, Column, select, func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError
 from sqlalchemy.pool import QueuePool
-from sqlalchemy.types import BigInteger, Date, Integer, Numeric, String, Float, Text
+from sqlalchemy.types import (
+    BigInteger,
+    Date,
+    DateTime,
+    Float,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 
 from src.utils.logger import logger
 
@@ -26,12 +35,23 @@ class DatabaseLoader:
         )
         self.metadata = MetaData()
 
+        # ── Table definitions match init_db.sql exactly ────────────────────
+        # server_default mirrors the DEFAULT now() / trigger in SQL so that
+        # create_all() (used in integration tests) produces the correct schema.
+
         self.stocks = Table(
             "stocks",
             self.metadata,
             Column("id", Integer, primary_key=True),
             Column("symbol", String(10), unique=True, nullable=False),
+            Column(
+                "created_at",
+                DateTime(timezone=True),
+                nullable=False,
+                server_default=text("now()"),
+            ),
         )
+
         self.stock_prices = Table(
             "stock_prices",
             self.metadata,
@@ -42,7 +62,20 @@ class DatabaseLoader:
             Column("low", Numeric(10, 4)),
             Column("close", Numeric(10, 4)),
             Column("volume", BigInteger),
+            Column(
+                "created_at",
+                DateTime(timezone=True),
+                nullable=False,
+                server_default=text("now()"),
+            ),
+            Column(
+                "updated_at",
+                DateTime(timezone=True),
+                nullable=False,
+                server_default=text("now()"),
+            ),
         )
+
         self.data_quality_log = Table(
             "data_quality_log",
             self.metadata,
@@ -60,13 +93,19 @@ class DatabaseLoader:
             Column("pipeline_duration_s", Float),
             Column("status", String(20)),
             Column("error_message", Text),
+            Column(
+                "logged_at",
+                DateTime(timezone=True),
+                nullable=False,
+                server_default=text("now()"),
+            ),
         )
+
         self.ensure_tables_exist()
         logger.info("DatabaseLoader initialized")
 
     def ensure_tables_exist(self):
         try:
-            # SA 2.0: pass engine directly to create_all
             self.metadata.create_all(self.engine)
             logger.info("All tables ensured to exist")
         except SQLAlchemyError as e:
@@ -75,7 +114,6 @@ class DatabaseLoader:
 
     def get_latest_date(self, symbol: str) -> Optional[date]:
         try:
-            # SA 2.0: use engine.connect() as context manager, execute() returns CursorResult
             with self.engine.connect() as conn:
                 stock_id = conn.execute(
                     select(self.stocks.c.id).where(self.stocks.c.symbol == symbol)
@@ -99,7 +137,6 @@ class DatabaseLoader:
             return None
 
     def _get_or_create_stock_id(self, conn, symbol: str) -> int:
-        # SA 2.0: insert().returning() still works, but fetchone() returns a Row
         result = conn.execute(
             insert(self.stocks)
             .values(symbol=symbol)
@@ -111,7 +148,6 @@ class DatabaseLoader:
             logger.info(f"Inserted new stock: {symbol} → id {row[0]}")
             return row[0]
 
-        # SA 2.0: scalar_one() still supported
         stock_id = conn.execute(
             select(self.stocks.c.id).where(self.stocks.c.symbol == symbol)
         ).scalar_one()
@@ -144,7 +180,6 @@ class DatabaseLoader:
         start = time.time()
         total = len(df)
 
-        # SA 2.0: engine.begin() still works as a context manager
         with self.engine.begin() as conn:
             stock_id = self._get_or_create_stock_id(conn, symbol)
 
@@ -202,7 +237,7 @@ class DatabaseLoader:
                         rows_transformed=rows_transformed,
                         rows_validated=rows_validated,
                         rows_loaded=rows_loaded,
-                        rows_dropped=rows_raw - rows_loaded,
+                        rows_dropped=max(0, rows_raw - rows_loaded),
                         api_latency_ms=api_latency_ms,
                         db_latency_ms=db_latency_ms,
                         pipeline_duration_s=pipeline_duration_s,

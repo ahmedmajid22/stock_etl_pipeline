@@ -3,7 +3,6 @@ import uuid
 import os
 from datetime import datetime, timezone
 
-
 from src.config.config import Config
 from src.extract.api_client import AlphaVantageClient
 from src.load.database import DatabaseLoader

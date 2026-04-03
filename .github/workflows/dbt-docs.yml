@@ -13,8 +13,8 @@ permissions:
 jobs:
   docs:
     runs-on: ubuntu-latest
-    # Skip if the dbt folder doesn't exist (prevents failures)
-    if: ${{ hashFiles('dbt/') != '' }}
+    # hashFiles requires a glob pattern, not a bare directory path
+    if: ${{ hashFiles('dbt/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

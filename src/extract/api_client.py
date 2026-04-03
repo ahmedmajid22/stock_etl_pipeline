@@ -20,7 +20,7 @@ class RateLimitError(Exception):
 
 class AlphaVantageClient:
     """
-    Production-grade client with circuit breaker and non‑blocking retries.
+    Production-grade client with circuit breaker and non-blocking retries.
     """
 
     BASE_URL = "https://www.alphavantage.co/query"
@@ -31,6 +31,7 @@ class AlphaVantageClient:
         failure_threshold: int = 5,
         recovery_timeout: int = 60,
         half_open_max_calls: int = 3,
+        max_retries: int = 3,
     ):
         self.api_key = api_key
         self.session = requests.Session()
@@ -39,6 +40,8 @@ class AlphaVantageClient:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_max_calls = half_open_max_calls
+        # How many attempts per call before giving up and letting Airflow retry
+        self.max_retries = max_retries
 
         self.state = CircuitState.CLOSED
         self.failure_count = 0
@@ -93,11 +96,17 @@ class AlphaVantageClient:
 
     def get_daily_stock_data(self, symbol: str) -> Dict:
         """
-        Fetch daily stock data with circuit breaker and non‑blocking retries.
-        Raises appropriate exceptions (RateLimitError, RuntimeError, ValueError)
-        to let Airflow handle retries.
+        Fetch daily stock data with circuit breaker and non-blocking retries.
+
+        Attempts up to self.max_retries times for transient errors (timeouts,
+        request exceptions). Rate limit errors and API errors fail immediately
+        on the final attempt so Airflow can handle task-level retries.
+
+        Raises:
+            RuntimeError: Circuit breaker is OPEN, or max retries exceeded.
+            RateLimitError: Alpha Vantage rate limit hit (let Airflow retry).
+            ValueError: Invalid API response structure or API-level error.
         """
-        # Circuit breaker check
         if not self._check_circuit():
             raise RuntimeError(f"Circuit breaker OPEN for {symbol}")
 
@@ -108,12 +117,10 @@ class AlphaVantageClient:
             "outputsize": "compact",
         }
 
-        max_retries = 1
-
-        for attempt in range(1, max_retries + 1):
+        for attempt in range(1, self.max_retries + 1):
             try:
                 logger.info(
-                    f"Fetching daily stock data for {symbol}, attempt {attempt}"
+                    f"Fetching daily stock data for {symbol}, attempt {attempt}/{self.max_retries}"
                 )
 
                 response = self.session.get(
@@ -125,13 +132,14 @@ class AlphaVantageClient:
 
                 data = response.json()
 
-                # Handle API errors
+                # Handle API-level error messages
                 if "Error Message" in data:
                     raise ValueError(f"API returned error: {data['Error Message']}")
 
-                # Rate limiting – raise a special exception so Airflow can retry
+                # Rate limiting — raise immediately; Airflow handles task-level retry
                 if "Note" in data or "Information" in data:
-                    logger.warning(f"Rate limit hit for {symbol}")
+                    logger.warning(f"Rate limit hit for {symbol} on attempt {attempt}")
+                    self._record_failure()
                     raise RateLimitError(
                         f"Alpha Vantage rate limit exceeded for {symbol}"
                     )
@@ -142,39 +150,33 @@ class AlphaVantageClient:
                         f"Unexpected API response structure for {symbol}: {data}"
                     )
 
-                # Success
+                # Success — reset circuit breaker
                 self._record_success()
                 logger.info(f"Successfully fetched data for {symbol}")
                 return data
 
-            except RateLimitError as e:
-                # Rate limit is transient – let caller retry
-                logger.warning(f"Rate limit error (attempt {attempt}): {e}")
-                if attempt == max_retries:
-                    self._record_failure()
-                    raise  # re‑raise for Airflow
-                # No sleep here – Airflow will retry after its delay
-                # We just break out to the next attempt
-                continue
+            except (RateLimitError, ValueError):
+                # Non-transient — do not retry in this loop; re-raise immediately
+                raise
 
             except requests.Timeout as e:
-                # Transient network timeout
-                logger.warning(f"Timeout error (attempt {attempt}): {e}")
-                if attempt == max_retries:
+                logger.warning(f"Timeout on attempt {attempt}/{self.max_retries}: {e}")
+                if attempt == self.max_retries:
                     self._record_failure()
                     raise RuntimeError(
-                        f"Max retries exceeded for {symbol} due to timeouts"
-                    )
+                        f"Max retries ({self.max_retries}) exceeded for {symbol} due to timeouts"
+                    ) from e
                 continue
 
-            except (requests.RequestException, ValueError) as e:
-                # Non‑transient errors (bad request, invalid data)
-                logger.warning(f"Request error (attempt {attempt}): {e}")
-                if attempt == max_retries:
+            except requests.RequestException as e:
+                logger.warning(
+                    f"Request error on attempt {attempt}/{self.max_retries}: {e}"
+                )
+                if attempt == self.max_retries:
                     self._record_failure()
                     raise
                 continue
 
-        # Should never reach here, but safeguard
+        # Safety net — should never be reached
         self._record_failure()
-        raise RuntimeError(f"Max retries exceeded for {symbol}")
+        raise RuntimeError(f"Max retries ({self.max_retries}) exceeded for {symbol}")

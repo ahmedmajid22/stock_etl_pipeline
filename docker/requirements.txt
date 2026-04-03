@@ -11,3 +11,8 @@ pytest==7.4.0
 pytest-cov==4.1.0
 redis==5.0.1
 prometheus-client==0.19.0
+# numpy<2.0 is required: pandas 2.1.4 and pyarrow 14 both have compatibility
+# issues with numpy 2.x. Previously installed ad-hoc in CI — now pinned here.
+numpy<2.0
+# cryptography is required for Fernet key generation (Airflow + README quickstart)
+cryptography>=41.0.0
