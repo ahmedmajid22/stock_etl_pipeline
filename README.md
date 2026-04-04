@@ -103,6 +103,7 @@ Alpha Vantage's free tier is rate-limited and occasionally flaky. Without protec
 | **Docker Compose** | Local infra | One-command spin-up of all 8 services |
 | **loguru** | Logging | Structured, rotating, thread-safe — works cleanly with Celery workers |
 | **pytest + pytest-cov** | Testing | Unit + integration coverage with CI enforcement |
+| **ruff + black + detect-secrets** | Code quality | Pre-commit hooks enforce style and prevent secret leaks on every commit |
 
 ---
 
@@ -170,6 +171,7 @@ make down            # docker compose down
 make test            # run unit tests with coverage
 make run SYMBOL=AAPL # run standalone pipeline for one symbol
 make lint            # ruff + black check
+make install-hooks   # install pre-commit hooks (first-time setup)
 ```
 
 ---
@@ -344,6 +346,7 @@ tests/unit/test_config.py::test_connection_string_format                      PA
 │   ├── unit/                       # Fast, fully mocked — run in < 2s
 │   ├── integration/                # Requires live DB — guarded by pytest.mark.integration
 │   └── data/sample_av_response.json
+├── .pre-commit-config.yaml         # ruff, black, detect-secrets hooks
 ├── Makefile
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
@@ -398,12 +401,12 @@ Wait for `airflow-init` to complete (`docker compose logs -f airflow-init`), the
 | Prometheus + Grafana observability | ✅ Done | 5 metrics, auto-provisioned dashboard |
 | Circuit breaker on API client | ✅ Done | 3-state, configurable thresholds |
 | Audit log per pipeline run | ✅ Done | `data_quality_log` table |
+| Pre-commit hooks (ruff, black, detect-secrets) | ✅ Done | Enforced on every local commit |
 | dbt analytical models | 🔄 In Progress | 30-day moving average, daily returns, volatility on top of `stock_prices` |
 | S3 / MinIO staging | 📋 Planned | Replace local Parquet with object storage for durability and horizontal scaling |
 | Streaming layer (Kafka → real-time prices) | 📋 Planned | Demonstrates batch-vs-streaming tradeoff awareness |
 | Cloud migration (AWS MWAA + S3 + RDS) | 📋 Planned | Production-grade cloud deployment |
 | Expanded symbol list | 📋 Planned | Parameterise via Airflow Variables — no code change needed |
-| pre-commit hooks | 📋 Planned | `black`, `ruff`, `detect-secrets` |
 
 ---
 

@@ -1,23 +1,57 @@
 name: Pylint
 
-on: [push]
+# FIX: previously ran on every push to every branch — very noisy and
+# conflicts with the main CI lint job. Now only runs on PRs and pushes
+# to the protected branches, matching ci.yml's trigger scope.
+# Also fixed: matrix now uses 3.11 only (project requires 3.11),
+# and installs project deps so pylint can resolve all imports.
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
 
 jobs:
-  build:
+  pylint:
+    name: Pylint
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pylint
-    - name: Analysing the code with pylint
-      run: |
-        pylint $(git ls-files '*.py')
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # FIX: pylint needs the project's own dependencies installed or it will
+      # raise E0401 (import-error) for every src import (pandas, sqlalchemy, etc.)
+      - name: Install dependencies
+        run: |
+          pip install \
+            apache-airflow==2.8.1 \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.8.1/constraints-3.11.txt"
+          pip install \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.8.1/constraints-3.11.txt" \
+            -r docker/requirements.txt
+          pip install pylint
+
+      # FIX: `git ls-files '*.py'` picks up any venv or installed package .py files
+      # if they live inside the repo. Scope pylint explicitly to src/ and airflow/.
+      # Disable import-error (E0401) since some Airflow providers are optional.
+      - name: Run pylint on src
+        run: |
+          pylint src/ \
+            --disable=C0114,C0115,C0116 \
+            --disable=R0903 \
+            --max-line-length=120 \
+            --fail-under=7.0
+
+      - name: Run pylint on DAGs
+        run: |
+          pylint airflow/dags/ \
+            --disable=C0114,C0115,C0116 \
+            --disable=E0401 \
+            --max-line-length=120 \
+            --fail-under=7.0

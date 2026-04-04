@@ -22,6 +22,17 @@ from src.utils.logger import logger
 
 
 class DatabaseLoader:
+    """
+    Handles all database writes for the stock ETL pipeline.
+
+    Key design decisions:
+    - Idempotent UPSERT on (stock_id, date) — safe to re-run at any time
+    - Batched writes (default 1 000 rows/batch) to bound memory usage
+    - Exponential-backoff retry on transient connection errors
+    - ensure_tables_exist() uses checkfirst=True so it is safe in production
+      (it will not drop or alter existing tables/constraints managed by init_db.sql)
+    """
+
     def __init__(self, db_connection_string: str, batch_size: int = 1000) -> None:
         self.batch_size = batch_size
         self.engine = create_engine(
@@ -29,15 +40,18 @@ class DatabaseLoader:
             poolclass=QueuePool,
             pool_size=10,
             max_overflow=20,
-            pool_pre_ping=True,
-            pool_recycle=3600,
+            pool_pre_ping=True,  # test connections before use (handles stale sockets)
+            pool_recycle=3600,  # recycle connections every hour
             echo=False,
         )
         self.metadata = MetaData()
 
-        # ── Table definitions match init_db.sql exactly ────────────────────
-        # server_default mirrors the DEFAULT now() / trigger in SQL so that
-        # create_all() (used in integration tests) produces the correct schema.
+        # ── Table definitions ─────────────────────────────────────────────────
+        # These mirror init_db.sql so that SQLAlchemy can generate correct INSERT/
+        # SELECT statements.  create_all() is only used in integration tests (with
+        # checkfirst=True) — production schema is always managed by init_db.sql.
+        # Note: SQLAlchemy Table definitions intentionally omit CHECK constraints
+        # and partial indexes — those are DDL concerns owned by init_db.sql.
 
         self.stocks = Table(
             "stocks",
@@ -104,15 +118,24 @@ class DatabaseLoader:
         self.ensure_tables_exist()
         logger.info("DatabaseLoader initialized")
 
-    def ensure_tables_exist(self):
+    def ensure_tables_exist(self) -> None:
+        """
+        Create tables if they do not already exist.
+
+        Uses checkfirst=True so this is a no-op in production (where init_db.sql
+        has already created the full schema with constraints and indexes).
+        In integration tests running against a fresh DB it creates the minimal
+        schema needed for the tests to pass.
+        """
         try:
-            self.metadata.create_all(self.engine)
-            logger.info("All tables ensured to exist")
+            self.metadata.create_all(self.engine, checkfirst=True)
+            logger.info("All tables verified / created")
         except SQLAlchemyError as e:
             logger.error(f"Failed to ensure tables exist: {e}")
             raise
 
     def get_latest_date(self, symbol: str) -> Optional[date]:
+        """Return the most recent date already loaded for *symbol*, or None."""
         try:
             with self.engine.connect() as conn:
                 stock_id = conn.execute(
@@ -137,6 +160,13 @@ class DatabaseLoader:
             return None
 
     def _get_or_create_stock_id(self, conn, symbol: str) -> int:
+        """
+        Upsert into stocks dimension table and return the row id.
+
+        Uses INSERT … ON CONFLICT DO NOTHING returning id.  If the row already
+        existed the RETURNING clause yields nothing, so we fall back to a SELECT.
+        This two-step pattern is safe under the (low) concurrency of this pipeline.
+        """
         result = conn.execute(
             insert(self.stocks)
             .values(symbol=symbol)
@@ -155,6 +185,7 @@ class DatabaseLoader:
         return stock_id
 
     def _execute_with_retry(self, operation, max_retries: int = 3):
+        """Run *operation* with exponential-backoff retry on transient DB errors."""
         delay = 1
         for attempt in range(1, max_retries + 1):
             try:
@@ -164,15 +195,18 @@ class DatabaseLoader:
                     logger.error(f"DB operation failed after {max_retries} attempts")
                     raise
                 logger.warning(
-                    f"Transient DB error (attempt {attempt}): {e}. Retry in {delay}s"
+                    f"Transient DB error (attempt {attempt}/{max_retries}): {e}. "
+                    f"Retrying in {delay}s…"
                 )
                 time.sleep(delay)
                 delay *= 2
             except SQLAlchemyError as e:
+                # Non-retriable (constraint violation, bad SQL, etc.) — fail fast
                 logger.exception(f"Non-retriable DB error: {e}")
                 raise
 
     def upsert_dataframe(self, df: pd.DataFrame, symbol: str) -> None:
+        """Batch-upsert all rows in *df* for *symbol* into stock_prices."""
         if df.empty:
             logger.info(f"No data to upsert for {symbol}")
             return
@@ -195,6 +229,8 @@ class DatabaseLoader:
         logger.info(f"Upsert complete for {symbol}: {total} rows in {elapsed:.2f}s")
 
     def _upsert_chunk(self, chunk: List[Dict[str, Any]]) -> None:
+        """Execute a single batch UPSERT."""
+
         def do_upsert():
             with self.engine.begin() as conn:
                 stmt = insert(self.stock_prices).values(chunk)
@@ -206,6 +242,7 @@ class DatabaseLoader:
                         "low": stmt.excluded.low,
                         "close": stmt.excluded.close,
                         "volume": stmt.excluded.volume,
+                        # updated_at is handled by the DB trigger (trg_stock_prices_updated_at)
                     },
                 )
                 conn.execute(stmt)
@@ -214,18 +251,32 @@ class DatabaseLoader:
 
     def log_quality_metrics(
         self,
-        symbol,
-        run_id,
-        rows_raw,
-        rows_transformed,
-        rows_validated,
-        rows_loaded,
-        api_latency_ms,
-        db_latency_ms,
-        pipeline_duration_s,
-        status="success",
-        error_message=None,
+        symbol: str,
+        run_id: str,
+        rows_raw: int,
+        rows_transformed: int,
+        rows_validated: int,
+        rows_loaded: int,
+        api_latency_ms: int,
+        db_latency_ms: int,
+        pipeline_duration_s: float,
+        status: str = "success",
+        error_message: Optional[str] = None,
     ) -> None:
+        """
+        Insert one audit row into data_quality_log for this pipeline run.
+
+        rows_dropped is defined as (rows_validated - rows_loaded): the number of
+        records that passed all quality checks but were not written to the DB
+        (e.g. already present from a previous run, or filtered by incremental logic).
+        This is intentionally different from (rows_raw - rows_loaded) which would
+        conflate intentional transform drops with genuine load failures.
+        """
+        # FIX: previous formula was `max(0, rows_raw - rows_loaded)` which counted
+        # every row removed during transform/validate as "dropped at load" — semantically
+        # incorrect. rows_dropped should only reflect data lost *after* validation.
+        rows_dropped = max(0, rows_validated - rows_loaded)
+
         try:
             with self.engine.begin() as conn:
                 conn.execute(
@@ -237,7 +288,7 @@ class DatabaseLoader:
                         rows_transformed=rows_transformed,
                         rows_validated=rows_validated,
                         rows_loaded=rows_loaded,
-                        rows_dropped=max(0, rows_raw - rows_loaded),
+                        rows_dropped=rows_dropped,
                         api_latency_ms=api_latency_ms,
                         db_latency_ms=db_latency_ms,
                         pipeline_duration_s=pipeline_duration_s,
@@ -245,6 +296,9 @@ class DatabaseLoader:
                         error_message=error_message,
                     )
                 )
-            logger.info(f"Quality metrics logged for {symbol} run {run_id}")
+            logger.info(
+                f"Quality metrics logged for {symbol} run {run_id} — status={status}"
+            )
         except SQLAlchemyError as e:
+            # Metric logging failure must not crash the pipeline
             logger.warning(f"Failed to log quality metrics for {symbol}: {e}")

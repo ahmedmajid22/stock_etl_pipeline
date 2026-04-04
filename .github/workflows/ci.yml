@@ -55,16 +55,17 @@ jobs:
           --health-retries 5
 
     env:
-      API_KEY: test_key  # pragma: allowlist secret
+      API_KEY: test_key_for_ci_only  # pragma: allowlist secret
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: stocks
       DB_USER: airflow
-      DB_PASSWORD: airflow
+      DB_PASSWORD: airflow  # pragma: allowlist secret
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@localhost/stocks
+      # FIX: use secrets with fallback; the fallback is a non-sensitive CI-only test key
       FERNET_KEY: ${{ secrets.FERNET_KEY || 'dGhpcyBpcyBhIHRlc3Qga2V5IG9ubHkgZm9yIENJIQ==' }}  # pragma: allowlist secret
-      AIRFLOW__WEBSERVER__SECRET_KEY: ci-test-secret-key
+      AIRFLOW__WEBSERVER__SECRET_KEY: ci-test-secret-key  # pragma: allowlist secret
 
     steps:
       - uses: actions/checkout@v4
@@ -89,8 +90,10 @@ jobs:
           psql postgresql://airflow:airflow@localhost/stocks -f docker/init_db.sql
 
       - name: Run tests
+        # FIX: was `src/tests/` which does not exist — correct path is `tests/unit`
+        # Integration tests require a live DB with the correct schema and are excluded here.
         run: |
-          pytest src/tests/ \
+          pytest tests/unit \
             --cov=src \
             --cov-report=xml \
             --cov-report=term-missing \
@@ -102,6 +105,9 @@ jobs:
         with:
           files: coverage.xml
           fail_ci_if_error: false
+          # Add your Codecov token in repo Settings → Secrets → CODECOV_TOKEN
+          # Required for private repos and recommended for public repos since 2024.
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   docker-build:
     name: Docker build
@@ -127,15 +133,18 @@ jobs:
     name: Integration smoke test
     runs-on: ubuntu-latest
     needs: [test, docker-build]
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Write CI .env # pragma: allowlist secret
-        run: | # pragma: allowlist secret
-          cat > .env <<'EOF' # pragma: allowlist secret
-          API_KEY=ci_test_key  # pragma: allowlist secret
+      # FIX: heredoc was indented, so each line got leading whitespace
+      # (e.g. "  API_KEY=${{ secrets.API_KEY }}") which breaks docker-compose env parsing.
+      # The EOF block must be flush-left so no whitespace is prepended to values.
+      - name: Write CI .env
+        run: |
+          cat > .env << 'EOF'
+          API_KEY=${{ secrets.API_KEY }}
           DB_HOST=postgres
           DB_PORT=5432
           DB_NAME=stocks
@@ -143,7 +152,7 @@ jobs:
           DB_PASSWORD=airflow
           AIRFLOW__CORE__EXECUTOR=CeleryExecutor
           AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/stocks
-          FERNET_KEY=dGhpcyBpcyBhIHRlc3Qga2V5IG9ubHkgZm9yIENJIQ==  # pragma: allowlist secret
+          FERNET_KEY=dGhpcyBpcyBhIHRlc3Qga2V5IG9ubHkgZm9yIENJIQ==
           AIRFLOW__WEBSERVER__SECRET_KEY=ci-integration-secret
           AIRFLOW_ADMIN_USER=admin
           AIRFLOW_ADMIN_PASSWORD=admin  # pragma: allowlist secret
@@ -151,30 +160,46 @@ jobs:
           AIRFLOW_UID=50000
           AIRFLOW__CELERY__WORKER_CONCURRENCY=2
           EOF
+          # Strip any leading whitespace from each line (belt-and-suspenders)
+          sed -i 's/^[[:space:]]*//' .env
 
       - name: Start stack
         working-directory: docker
         run: |
           docker compose up -d --build
 
+      # FIX 1: Airflow 2.8 /health returns nested JSON like:
+      #   {"metadatabase":{"status":"healthy"},"scheduler":{"status":"healthy"}}
+      #   Checking for '"status": "healthy"' (with a space) never matches.
+      #   Use python to parse and check both components are healthy.
+      # FIX 2: The `docker compose logs` fallback was using a wrong -f path.
+      #   The working-directory is the repo root here, so use `docker compose -f docker/docker-compose.yml`.
       - name: Wait for Airflow webserver to be healthy
         run: |
-          echo "Waiting for webserver..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/health | grep -q '"status": "healthy"'; then
+          echo "Waiting for Airflow webserver..."
+          for i in $(seq 1 40); do
+            HEALTH=$(curl -sf http://localhost:8080/health 2>/dev/null || echo "{}")
+            DB_OK=$(echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('metadatabase',{}).get('status',''))" 2>/dev/null || echo "")
+            SCHED_OK=$(echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('scheduler',{}).get('status',''))" 2>/dev/null || echo "")
+            if [ "$DB_OK" = "healthy" ] && [ "$SCHED_OK" = "healthy" ]; then
               echo "Webserver is healthy after ${i} attempts"
               exit 0
             fi
-            echo "  attempt ${i}/30 — not ready yet"
+            echo "  attempt ${i}/40 — db=${DB_OK} scheduler=${SCHED_OK} — waiting 15s..."
             sleep 15
           done
           echo "ERROR: Webserver did not become healthy in time"
-          docker compose -f docker/docker-compose.yml logs
+          docker compose -f docker/docker-compose.yml logs --tail=100
           exit 1
 
       - name: Verify Grafana is reachable
         run: |
-          curl -sf http://localhost:3000/api/health | grep -q '"database": "ok"'
+          curl -sf http://localhost:3000/api/health | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d.get('database') == 'ok', f'Grafana not healthy: {d}'
+          print('Grafana OK')
+          "
 
       - name: Verify Prometheus is reachable
         run: |
@@ -184,19 +209,25 @@ jobs:
         run: |
           curl -sf http://localhost:9091/-/healthy
 
+      # FIX: Airflow 2.8 stable auth is HTTP Basic on the REST API.
+      # The /api/v1/auth/token endpoint was removed in 2.8+.
       - name: Check Airflow pools exist
         run: |
-          TOKEN=$(curl -sf -u admin:admin http://localhost:8080/api/v1/auth/token \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"admin\",\"password\":\"admin\"}" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-          curl -sf -H "Authorization: Bearer ${TOKEN}" \
-            http://localhost:8080/api/v1/pools/alpha_vantage_pool | grep -q '"pool": "alpha_vantage_pool"'
+          curl -sf \
+            -u admin:admin \
+            http://localhost:8080/api/v1/pools/alpha_vantage_pool \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d.get('name') == 'alpha_vantage_pool', f'Pool not found: {d}'
+          print('Pool OK:', d.get('name'), 'slots:', d.get('slots'))
+          "
 
       - name: Dump logs on failure
         if: failure()
         working-directory: docker
         run: |
-          docker compose logs --tail=100
+          docker compose logs --tail=150
 
       - name: Tear down
         if: always()

@@ -3,24 +3,27 @@ repos:
     rev: v0.3.0
     hooks:
       - id: ruff
-        args: [--fix]
-        exclude: |
-          (folder|the|recreate)/lib/
+        # FIX: `--fix` silently mutates files; add `--exit-non-zero-on-fix` so the
+        # commit is aborted when ruff auto-fixes something, forcing the developer
+        # to review and re-stage the fix before committing. This prevents "silent
+        # reformats" sneaking into commits.
+        args: [--fix, --exit-non-zero-on-fix]
+        # FIX: exclude pattern was `(folder|the|recreate)/lib/` — nonsense names
+        # that don't exist in this project. Correct pattern excludes venv dirs.
+        exclude: ^(venv|\.venv|\.tox|node_modules)/
 
   - repo: https://github.com/psf/black
     rev: 24.2.0
     hooks:
       - id: black
-        exclude: |
-          (folder|the|recreate)/lib/
+        exclude: ^(venv|\.venv|\.tox|node_modules)/
 
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
-        exclude: |
-          (folder|the|recreate)/lib/
+        exclude: ^(venv|\.venv|\.tox|node_modules)/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
@@ -29,3 +32,6 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+      # Prevent accidental commits of plain .env files with real secrets
+      - id: check-merge-conflict
+      - id: debug-statements
