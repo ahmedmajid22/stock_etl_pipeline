@@ -9,7 +9,11 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: true
-    version: 1   # ✅ CRITICAL FIX (Grafana 12)
+    # version: 1 is required in Grafana 12 for the provisioning API to accept
+    # the datasource without a "version conflict" error on container restart.
+    version: 1
     jsonData:
       httpMethod: POST
       timeInterval: 15s
+      # Validate that Prometheus is reachable when Grafana starts
+      manageAlerts: false

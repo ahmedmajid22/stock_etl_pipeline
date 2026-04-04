@@ -1,0 +1,48 @@
+groups:
+  - name: stock_etl_alerts
+    rules:
+      # Alert if any symbol's ETL pipeline has not succeeded in the last 26 hours
+      - alert: ETLPipelineFailure
+        expr: etl_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ETL pipeline failure for {{ $labels.symbol }}"
+          description: >
+            The ETL pipeline for {{ $labels.symbol }} reported a failure.
+            Check Airflow logs for details.
+
+      # Alert if API latency exceeds 10 seconds
+      - alert: HighAPILatency
+        expr: etl_api_latency_ms > 10000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Alpha Vantage API latency for {{ $labels.symbol }}"
+          description: >
+            API latency for {{ $labels.symbol }} is {{ $value }}ms,
+            above the 10s threshold.
+
+      # Alert if DB write latency exceeds 5 seconds
+      - alert: HighDBLatency
+        expr: etl_db_latency_ms > 5000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High DB write latency for {{ $labels.symbol }}"
+          description: >
+            DB write latency for {{ $labels.symbol }} is {{ $value }}ms,
+            above the 5s threshold.
+
+      # Alert if the pushgateway itself disappears
+      - alert: PushgatewayDown
+        expr: up{job="pushgateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pushgateway is down"
+          description: "The Prometheus Pushgateway is not reachable."

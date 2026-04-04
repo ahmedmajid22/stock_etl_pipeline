@@ -1,18 +1,37 @@
+# ── Core Airflow ─────────────────────────────────────────────────────────────
 apache-airflow==2.8.1
 apache-airflow-providers-slack==8.6.0
+apache-airflow-providers-postgres==5.10.2
+
+# ── Data / ETL ────────────────────────────────────────────────────────────────
 pandas==1.5.3
-requests==2.31.0
+pyarrow==14.0.2
+# numpy<2.0 required: pandas 1.5 and pyarrow 14 both break with numpy 2.x
+numpy<2.0
+
+# ── DB / ORM ─────────────────────────────────────────────────────────────────
 sqlalchemy==1.4.51
 psycopg2-binary==2.9.9
+
+# ── HTTP / API ────────────────────────────────────────────────────────────────
+requests==2.31.0
+
+# ── Celery broker (Redis) ─────────────────────────────────────────────────────
+# celery[redis] pulls the correct aioredis/redis extras for Celery's broker.
+# redis>=4.2 is required; we pin to 5.x for async support.
+redis==5.0.1
+
+# ── Observability ─────────────────────────────────────────────────────────────
+prometheus-client==0.19.0
+
+# ── Utilities ────────────────────────────────────────────────────────────────
 python-dotenv==1.0.0
 loguru==0.7.2
-pyarrow==14.0.2
-pytest==7.4.0
-pytest-cov==4.1.0
-redis==5.0.1
-prometheus-client==0.19.0
-# numpy<2.0 is required: pandas 2.1.4 and pyarrow 14 both have compatibility
-# issues with numpy 2.x. Previously installed ad-hoc in CI — now pinned here.
-numpy<2.0
-# cryptography is required for Fernet key generation (Airflow + README quickstart)
+# cryptography: required for Fernet key generation (Airflow secret backend)
 cryptography>=41.0.0
+
+# ── Test deps (only installed in CI — see .github/workflows/ci.yml) ───────────
+# pytest==7.4.0
+# pytest-cov==4.1.0
+# These are intentionally commented out of the production image.
+# In CI the workflow runs:  pip install pytest==7.4.0 pytest-cov==4.1.0

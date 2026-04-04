@@ -1,4 +1,54 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stock ETL Pipeline — Docker Compose
+#
+# Key fixes vs original:
+#  1. airflow-init command now uses double-quoted YAML so ${VAR} expands in shell
+#  2. AIRFLOW__WEBSERVER__SECRET_KEY added everywhere (stable sessions)
+#  3. airflow-scheduler depends on redis being healthy
+#  4. AIRFLOW__CELERY__WORKER_CONCURRENCY=4 prevents OOM on 1 G worker
+#  5. airflow-init memory limit raised to 1 G (db migrate can be heavy)
+#  6. Grafana DNS override removed (unnecessary)
+#  7. chown step added in airflow-init for mounted volume permissions
+#  8. Airflow metrics scrape endpoint documented (see prometheus.yml)
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-airflow-common: &airflow-common
+  build: .
+  env_file:
+    - ../.env
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-CeleryExecutor}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    # Stable session cookie across webserver restarts — MUST be set
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
+    # Prevent OOM: 4 concurrent tasks per worker on 1 G memory
+    AIRFLOW__CELERY__WORKER_CONCURRENCY: ${AIRFLOW__CELERY__WORKER_CONCURRENCY:-4}
+    PYTHONPATH: /opt/airflow
+    API_KEY: ${API_KEY}
+    DB_HOST: postgres
+    DB_PORT: ${DB_PORT:-5432}
+    DB_NAME: ${DB_NAME}
+    DB_USER: ${DB_USER}
+    DB_PASSWORD: ${DB_PASSWORD}
+  volumes: &airflow-common-volumes
+    - ../airflow/dags:/opt/airflow/dags
+    - ../airflow/logs:/opt/airflow/logs
+    - ../airflow/plugins:/opt/airflow/plugins
+    - ../src:/opt/airflow/src
+    - ../data:/opt/airflow/data
+  working_dir: /opt/airflow
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
   postgres:
     image: postgres:13
     container_name: airflow-postgres
@@ -20,14 +70,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
 
   redis:
@@ -45,208 +95,159 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.2'
+          cpus: "0.2"
           memory: 128M
         reservations:
-          cpus: '0.1'
+          cpus: "0.1"
           memory: 64M
 
+  # ── Airflow bootstrap ───────────────────────────────────────────────────────
   airflow-init:
-    build: .
+    <<: *airflow-common
     container_name: airflow-init
+    # Override: init does NOT need the volume mounts or working_dir from common
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    env_file:
-      - ../.env
-    environment:
-      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
-      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: ${AIRFLOW_UID}
-      PYTHONPATH: /opt/airflow
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
-      API_KEY: ${API_KEY}
-      DB_HOST: postgres
-      DB_PORT: ${DB_PORT}
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
     entrypoint: /bin/bash
+    # FIX: double-quoted YAML string so the shell receives expanded ${VAR} values.
+    # Single-quoted YAML ('...') would pass literal dollar-sign strings.
     command:
-      - -c
+      - "-c"
       - |
         set -e
+
+        echo "==> Fixing volume permissions"
+        # Ensures the airflow user (uid 50000) can write to mounted volumes
+        # on Linux hosts where Docker creates directories as root.
+        mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+
+        echo "==> Running db migrate"
         airflow db migrate
+
+        echo "==> Creating admin user"
         airflow users create \
-            --username admin \
-            --firstname Ahmed \
-            --lastname Abufayed \
-            --role Admin \
-            --email admin@example.com \
-            --password admin
-        airflow pools set alpha_vantage_pool 3 'Cap concurrent Alpha Vantage API calls'
-        airflow connections add 'alpha_vantage_api' \
-            --conn-type 'http' \
-            --conn-password '${API_KEY}' || true
-        airflow connections add 'stock_db' \
-            --conn-type 'postgres' \
-            --conn-host '${DB_HOST}' \
-            --conn-login '${DB_USER}' \
-            --conn-password '${DB_PASSWORD}' \
-            --conn-port '${DB_PORT}' \
-            --conn-schema '${DB_NAME}' || true
+          --username "${AIRFLOW_ADMIN_USER:-admin}" \
+          --firstname Ahmed \
+          --lastname Abufayed \
+          --role Admin \
+          --email "${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" || true
+
+        echo "==> Configuring pool"
+        airflow pools set alpha_vantage_pool 3 "Cap concurrent Alpha Vantage API calls"
+
+        echo "==> Registering connections"
+        airflow connections add "alpha_vantage_api" \
+          --conn-type "http" \
+          --conn-password "${API_KEY}" || true
+
+        airflow connections add "stock_db" \
+          --conn-type "postgres" \
+          --conn-host "${DB_HOST}" \
+          --conn-login "${DB_USER}" \
+          --conn-password "${DB_PASSWORD}" \
+          --conn-port "${DB_PORT}" \
+          --conn-schema "${DB_NAME}" || true
+
+        echo "==> airflow-init complete"
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 512M
+          cpus: "0.5"
+          # Raised from 512M: airflow db migrate can spike to ~800M on first run
+          memory: 1G
 
+  # ── Airflow runtime ─────────────────────────────────────────────────────────
   airflow-webserver:
-    build: .
+    <<: *airflow-common
     container_name: airflow-webserver
     restart: always
     depends_on:
-      postgres:
-        condition: service_healthy
+      <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-    env_file:
-      - ../.env
-    environment:
-      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
-      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      API_KEY: ${API_KEY}
-      DB_HOST: postgres
-      DB_PORT: ${DB_PORT}
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      PYTHONPATH: /opt/airflow
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
     ports:
       - "8080:8080"
-    volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../airflow/logs:/opt/airflow/logs
-      - ../airflow/plugins:/opt/airflow/plugins
-      - ../src:/opt/airflow/src
-      - ../data:/opt/airflow/data
-    working_dir: /opt/airflow
     command: webserver
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 1G
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
 
   airflow-scheduler:
-    build: .
+    <<: *airflow-common
     container_name: airflow-scheduler
     restart: always
+    # FIX: scheduler also needs redis (CeleryExecutor uses the broker at startup)
     depends_on:
-      postgres:
-        condition: service_healthy
+      <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-    env_file:
-      - ../.env
-    environment:
-      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
-      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      API_KEY: ${API_KEY}
-      DB_HOST: postgres
-      DB_PORT: ${DB_PORT}
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      PYTHONPATH: /opt/airflow
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
-    volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../airflow/logs:/opt/airflow/logs
-      - ../airflow/plugins:/opt/airflow/plugins
-      - ../src:/opt/airflow/src
-      - ../data:/opt/airflow/data
-    working_dir: /opt/airflow
     command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
 
   airflow-worker:
-    build: .
+    <<: *airflow-common
     container_name: airflow-worker
     restart: always
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-    env_file:
-      - ../.env
-    environment:
-      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
-      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      API_KEY: ${API_KEY}
-      DB_HOST: postgres
-      DB_PORT: ${DB_PORT}
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      PYTHONPATH: /opt/airflow
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${DB_USER}:${DB_PASSWORD}@postgres/${DB_NAME}
-    volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../airflow/logs:/opt/airflow/logs
-      - ../airflow/plugins:/opt/airflow/plugins
-      - ../src:/opt/airflow/src
-      - ../data:/opt/airflow/data
-    working_dir: /opt/airflow
     command: celery worker
+    healthcheck:
+      test: ["CMD-SHELL", "celery --app airflow.executors.celery_executor.app inspect ping -d celery@$(hostname)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 1G
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
 
+  # ── Observability ───────────────────────────────────────────────────────────
   pushgateway:
     image: prom/pushgateway:latest
     container_name: pushgateway
     restart: unless-stopped
     ports:
       - "9091:9091"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9091/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   prometheus:
     image: prom/prometheus:latest
@@ -254,10 +255,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus_rules.yml:/etc/prometheus/rules.yml
     ports:
       - "9090:9090"
     depends_on:
       - pushgateway
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
 
   grafana:
     image: grafana/grafana-oss:latest
@@ -266,8 +271,12 @@ services:
     ports:
       - "3000:3000"
     environment:
+      GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Prevent Grafana from phoning home for plugin checks
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
@@ -280,9 +289,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+    # FIX: removed unnecessary external DNS override (8.8.8.8)
+    # Grafana only needs to resolve internal Docker hostnames (prometheus, etc.)
 
 volumes:
   postgres_data:

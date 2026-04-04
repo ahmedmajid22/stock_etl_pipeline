@@ -1,10 +1,26 @@
-# Virtual environments
+# =========================
+# Virtual Environments
+# =========================
 venv/
+env/
+recreate/
+the/
+
+# Catch any virtual environment anywhere (extra safety)
+**/bin/
+**/lib/
+**/pyvenv.cfg
+
+# =========================
+# Environment variables
+# =========================
 .env
 .env.*
 .envrc
 
+# =========================
 # Python
+# =========================
 __pycache__/
 *.pyc
 *.pyo
@@ -12,27 +28,41 @@ __pycache__/
 *.pytest_cache/
 .coverage
 
+# =========================
 # Logs
+# =========================
 logs/
 *.log
 
+# =========================
 # Data
+# =========================
 data/
 *.parquet
 
+# =========================
 # Airflow
+# =========================
 airflow/logs/
 
-# OS
+# =========================
+# OS files
+# =========================
 .DS_Store
 
-# IDE
+# =========================
+# IDEs / Editors
+# =========================
 .vscode/
 .idea/
 
+# =========================
 # Docker env (extra safety)
+# =========================
 docker/.env
 
-# Build
+# =========================
+# Build artifacts
+# =========================
 dist/
 build/

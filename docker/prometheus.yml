@@ -1,8 +1,27 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Load alerting rules
+rule_files:
+  - "rules.yml"
 
 scrape_configs:
+  # ETL pipeline metrics pushed by DAG workers
   - job_name: "pushgateway"
     honor_labels: true
     static_configs:
       - targets: ["pushgateway:9091"]
+
+  # Airflow built-in StatsD/Prometheus metrics (available at /metrics on webserver)
+  # Requires AIRFLOW__METRICS__STATSD_ON=False and AIRFLOW__METRICS__METRICS_USE_PATTERN_MATCH=True
+  # Uncomment when your airflow webserver exposes /metrics:
+  # - job_name: "airflow"
+  #   static_configs:
+  #     - targets: ["airflow-webserver:8080"]
+  #   metrics_path: "/metrics"
+
+  # Self-scrape Prometheus
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
