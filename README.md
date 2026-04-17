@@ -1,5 +1,6 @@
 # 📈 Stock Market ETL Pipeline
 
+
 > Production-grade data engineering pipeline — ingests, validates, and monitors daily OHLCV data for 4 symbols with full observability via Prometheus and Grafana.
 
 [![CI](https://github.com/ahmedmajid22/stock_etl_pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmedmajid22/stock_etl_pipeline/actions/workflows/ci.yml)
